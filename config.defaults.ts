@@ -69,7 +69,7 @@ export const defaultConfig: ConfigFile = {
       ".jpeg",
       ".gif",
       ".svg",
-      ".webp"
-    ]
+      ".webp",
+    ],
   },
 };
