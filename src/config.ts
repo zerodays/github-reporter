@@ -37,7 +37,10 @@ const envSchema = z.object({
 
   BUCKET_TYPE: z.string().optional(),
   BUCKET_URI: z.string().optional(),
+  BUCKET_NAME: z.string().optional(),
   BUCKET_REGION: z.string().optional(),
+  BUCKET_ENDPOINT: z.string().optional(),
+  BUCKET_FORCE_PATH_STYLE: z.string().optional(),
   BUCKET_ACCESS_KEY_ID: z.string().optional(),
   BUCKET_SECRET_ACCESS_KEY: z.string().optional(),
 
@@ -74,6 +77,24 @@ export function loadConfig() {
   if (!apiKey) {
     throw new Error("Missing GEMINI_API_KEY (env or config.defaults.ts).");
   }
+  const storage = {
+    type: env.BUCKET_TYPE ?? fileConfig.storage.type,
+    bucket: resolveBucketName(env, fileConfig.storage.bucket),
+    region: env.BUCKET_REGION ?? fileConfig.storage.region,
+    endpoint: env.BUCKET_ENDPOINT ?? fileConfig.storage.endpoint,
+    forcePathStyle: resolveBool(
+      env.BUCKET_FORCE_PATH_STYLE,
+      fileConfig.storage.forcePathStyle
+    ),
+    accessKeyId: env.BUCKET_ACCESS_KEY_ID ?? fileConfig.storage.accessKeyId,
+    secretAccessKey:
+      env.BUCKET_SECRET_ACCESS_KEY ?? fileConfig.storage.secretAccessKey
+  };
+
+  if (storage.type === "s3" && !storage.bucket) {
+    throw new Error("Missing BUCKET_NAME/BUCKET_URI for S3 storage.");
+  }
+
   return {
     github: {
       token: env.GITHUB_TOKEN ?? fileConfig.github.token,
@@ -127,14 +148,7 @@ export function loadConfig() {
       model: env.GEMINI_MODEL ?? fileConfig.llm.model,
       promptTemplate: env.PROMPT_TEMPLATE ?? fileConfig.llm.promptTemplate,
     },
-    storage: {
-      type: env.BUCKET_TYPE ?? fileConfig.storage.type,
-      uri: env.BUCKET_URI ?? fileConfig.storage.uri,
-      region: env.BUCKET_REGION ?? fileConfig.storage.region,
-      accessKeyId: env.BUCKET_ACCESS_KEY_ID ?? fileConfig.storage.accessKeyId,
-      secretAccessKey:
-        env.BUCKET_SECRET_ACCESS_KEY ?? fileConfig.storage.secretAccessKey,
-    },
+    storage,
     webhook: {
       url: env.WEBHOOK_URL ?? fileConfig.webhook.url,
       secret: env.WEBHOOK_SECRET ?? fileConfig.webhook.secret,
@@ -206,8 +220,10 @@ export const fileConfigSchema = z.object({
   storage: z
     .object({
       type: z.string().default("local"),
-      uri: z.string().optional(),
+      bucket: z.string().optional(),
       region: z.string().optional(),
+      endpoint: z.string().optional(),
+      forcePathStyle: z.boolean().default(false),
       accessKeyId: z.string().optional(),
       secretAccessKey: z.string().optional(),
     })
@@ -279,4 +295,17 @@ function normalizeDateValue(value: string | undefined) {
   if (!value) return undefined;
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
+}
+
+function resolveBucketName(
+  env: { BUCKET_NAME?: string; BUCKET_URI?: string },
+  fallback?: string
+) {
+  if (env.BUCKET_NAME) return env.BUCKET_NAME;
+  if (env.BUCKET_URI) return stripBucketScheme(env.BUCKET_URI);
+  return fallback;
+}
+
+function stripBucketScheme(value: string) {
+  return value.replace(/^s3:\/\//, "");
 }

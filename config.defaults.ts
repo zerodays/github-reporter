@@ -35,6 +35,10 @@ export const defaultConfig: ConfigFile = {
   },
   storage: {
     type: "local",
+    bucket: "",
+    region: "",
+    endpoint: "",
+    forcePathStyle: false,
   },
   network: {
     retryCount: 2,

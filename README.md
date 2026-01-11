@@ -29,6 +29,15 @@ Set `BACKFILL_DAYS` (e.g., `7`) or `BACKFILL_START`/`BACKFILL_END` (`YYYY-MM-DD`
 
 Set `REPORT_WINDOW_DAYS` to control the report window length (e.g., `7` for weekly, `30` for monthly-ish).
 
+## Storage layout
+
+Artifacts are written under `{output.prefix}/{ownerType}/{owner}/{start}__{end}/` with a `manifest.json` per window, plus indices under `{output.prefix}/_index/{ownerType}/{owner}/`.
+
+## Storage config (S3/R2)
+
+Set `BUCKET_TYPE=s3`, plus:
+`BUCKET_NAME` (or `BUCKET_URI`), `BUCKET_REGION`, `BUCKET_ENDPOINT` (for R2), and `BUCKET_FORCE_PATH_STYLE=true` if needed.
+
 ## Local setup (personal GitHub)
 
 1. Create a GitHub token: Settings → Developer settings → Personal access tokens.

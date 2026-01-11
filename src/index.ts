@@ -1,13 +1,14 @@
 import { loadConfig } from "./config.js";
 import { fetchActivity } from "./github.js";
 import { basePrompt, generateReport } from "./generator.js";
-import { artifactExists, writeArtifact } from "./storage.js";
+import { createStorageClient, describeStorage, validateStorage } from "./storage.js";
 import { sendWebhook } from "./webhook.js";
 import type { ReportInput, WebhookPayload } from "./types.js";
 import { formatTimestamp, logger, setLoggerConfig } from "./logger.js";
 import { withRetry } from "./retry.js";
 import { enrichReposWithContext } from "./context/index.js";
 import { getTemplateById } from "./templates.js";
+import { buildManifest, updateIndex, writeLatest, writeManifest } from "./manifest.js";
 
 async function main() {
   const config = loadConfig();
@@ -22,6 +23,10 @@ async function main() {
     owner: config.github.owner,
     ownerType: config.github.ownerType
   });
+  const storage = createStorageClient(config.storage);
+  runLogger.info("storage.validate.start", describeStorage(config.storage));
+  await validateStorage(config.storage);
+  runLogger.info("storage.validate.done", describeStorage(config.storage));
   runLogger.info("run.start");
   const now = new Date();
   const windows = buildWindows(config, now);
@@ -37,37 +42,15 @@ async function main() {
   }
 
   for (const window of windows) {
-    await runForWindow(window, config, runLogger);
+    await runForWindow(window, config, runLogger, storage);
   }
-}
-
-function buildArtifactKey(
-  date: Date,
-  extension: string,
-  idempotentKey?: string,
-  templateId?: string
-) {
-  if (!idempotentKey) {
-    const suffix = templateId ? `.${templateId}` : "";
-    return `${slugDate(date)}${suffix}.${extension}`;
-  }
-  if (idempotentKey === "daily") {
-    const daily = date.toISOString().slice(0, 10);
-    const suffix = templateId ? `.${templateId}` : "";
-    return `${daily}${suffix}.${extension}`;
-  }
-  const suffix = templateId ? `.${templateId}` : "";
-  return `${idempotentKey}${suffix}.${extension}`;
-}
-
-function slugDate(date: Date) {
-  return date.toISOString().replace(/[:.]/g, "-");
 }
 
 async function runForWindow(
   window: { start: string; end: string },
   config: ReturnType<typeof loadConfig>,
-  runLogger: ReturnType<typeof logger.withContext>
+  runLogger: ReturnType<typeof logger.withContext>,
+  storage: ReturnType<typeof createStorageClient>
 ) {
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
@@ -173,17 +156,23 @@ async function runForWindow(
       : inactiveRepoCount
   };
 
-  const storageConfig = {
-    type: config.storage.type,
-    uri: config.storage.uri,
-    region: config.storage.region,
-    accessKeyId: config.storage.accessKeyId,
-    secretAccessKey: config.storage.secretAccessKey,
-    prefix: config.output.prefix
-  };
-
   const templates =
     config.report.templates.length > 0 ? config.report.templates : ["default"];
+
+  const windowDays = config.report.windowDays ?? 1;
+  const windowKey = buildWindowKey(windowStart, windowEnd);
+  const reportBaseKey = buildReportBaseKey(config, windowKey);
+  const indexBaseKey = buildIndexBaseKey(config);
+  const artifacts: { id: string; format: string; stored: { key: string; uri: string; size: number } }[] = [];
+  const manifestKey = `${reportBaseKey}/manifest.json`;
+
+  if (config.report.idempotentKey) {
+    const manifestExists = await storage.exists(manifestKey);
+    if (manifestExists) {
+      runLogger.info("run.skipped", { key: manifestKey });
+      return;
+    }
+  }
 
   for (const templateId of templates) {
     const template =
@@ -200,21 +189,11 @@ async function runForWindow(
         )
       : config.llm.promptTemplate ?? basePrompt;
     const extension = outputFormat === "json" ? "json" : "md";
-    const key = buildArtifactKey(
-      windowStart,
-      extension,
-      config.report.idempotentKey,
-      template?.id ?? "default"
-    );
-
-    const exists = await artifactExists(storageConfig, key);
-    if (config.report.idempotentKey && exists) {
-      runLogger.info("run.skipped", {
-        key,
-        template: template?.id ?? "default"
-      });
-      continue;
-    }
+    const templateKey = `${reportBaseKey}/${template?.id ?? "default"}.${extension}`;
+    const contentType =
+      outputFormat === "json"
+        ? "application/json"
+        : "text/markdown; charset=utf-8";
 
     const generateStart = Date.now();
     runLogger.info("report.generate.start", {
@@ -248,16 +227,21 @@ async function runForWindow(
     const writeStart = Date.now();
     runLogger.info("artifact.write.start", {
       storageType: config.storage.type,
-      key,
+      key: templateKey,
       template: template?.id ?? "default"
     });
-    const artifact = await writeArtifact(storageConfig, key, report.text);
+    const artifact = await storage.put(templateKey, report.text, contentType);
     runLogger.info("artifact.write.done", {
       key: artifact.key,
       uri: artifact.uri,
       size: artifact.size,
       template: template?.id ?? "default",
       ...withDuration(writeStart, config)
+    });
+    artifacts.push({
+      id: template?.id ?? "default",
+      format: report.format,
+      stored: artifact
     });
 
     const payload: WebhookPayload = {
@@ -292,6 +276,59 @@ async function runForWindow(
       template: template?.id ?? "default"
     });
   }
+
+  if (artifacts.length === 0) {
+    runLogger.warn("manifest.skipped", { window: windowKey });
+    return;
+  }
+
+  const manifest = buildManifest(
+    config.github.owner,
+    config.github.ownerType,
+    { start: window.start, end: window.end, days: windowDays },
+    config.logging.timeZone,
+    reposForReport,
+    artifacts
+  );
+  await writeManifest(storage, manifestKey, manifest);
+  runLogger.info("manifest.write", { key: manifestKey });
+
+  const monthKey = `${indexBaseKey}/${window.start.slice(0, 7)}.json`;
+  await updateIndex(
+    storage,
+    monthKey,
+    config.github.owner,
+    config.github.ownerType,
+    window.start.slice(0, 7),
+    { start: window.start, end: window.end, days: windowDays, manifestKey }
+  );
+  runLogger.info("index.update", { key: monthKey });
+
+  const latestKey = `${indexBaseKey}/latest.json`;
+  await writeLatest(
+    storage,
+    latestKey,
+    config.github.owner,
+    config.github.ownerType,
+    { start: window.start, end: window.end, days: windowDays, manifestKey }
+  );
+  runLogger.info("index.latest", { key: latestKey });
+}
+
+function buildWindowKey(start: Date, end: Date) {
+  return `${formatDateOnly(start)}__${formatDateOnly(end)}`;
+}
+
+function formatDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function buildReportBaseKey(config: ReturnType<typeof loadConfig>, windowKey: string) {
+  return `${config.output.prefix}/${config.github.ownerType}/${config.github.owner}/${windowKey}`;
+}
+
+function buildIndexBaseKey(config: ReturnType<typeof loadConfig>) {
+  return `${config.output.prefix}/_index/${config.github.ownerType}/${config.github.owner}`;
 }
 
 function buildWindows(
