@@ -31,6 +31,7 @@ Job config moves to `jobs.defaults.ts`:
 - Job indices: `{prefix}/_index/{ownerType}/{owner}/{jobId}/YYYY-MM.json`
 - Job latest: `{prefix}/_index/{ownerType}/{owner}/{jobId}/latest.json`
 - Job registry: `{prefix}/_index/{ownerType}/{owner}/jobs.json`
+- Registry scope: per owner only (no global registry).
 
 ## Phase 1: Job Config + Runner (Implementation Details)
 1. Add `jobs.defaults.ts` (typed) with standard jobs and descriptions.
@@ -89,3 +90,14 @@ Job config moves to `jobs.defaults.ts`:
 - PR detail fetch disabled by default on org-scale jobs.
 - Manifest write must succeed before index update.
 - Viewer should handle empty indexes gracefully.
+- Empty windows default to `manifest-only` (no placeholder artifacts).
+- Define job identity stability: `jobId` immutable; add `jobVersion` for template/schema changes.
+- Window semantics: timezone-aware boundaries with documented inclusivity (e.g., `[start, end)`).
+- Job output contract: versioned manifest schema + required fields for viewer rendering.
+- Add window `summary.json` for list views (title, templates, empty flag, bytes).
+- Aggregation inputs: job config must specify canonical source template (e.g., `changelog`).
+- Failure handling: write failed manifests (`status: failed`, error) so gaps are visible.
+- Timezone handling: use a single timezone for windows, ids, dates, and logs.
+- Org jobs: author normalization rules live in job config (aliases/emails).
+- Redaction/allowlist: optional per-job path patterns to omit sensitive data.
+- Performance caps: per-job context byte limits and provider allowlists.

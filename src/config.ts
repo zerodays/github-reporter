@@ -31,6 +31,7 @@ const envSchema = z.object({
   BACKFILL_START: z.string().optional(),
   BACKFILL_END: z.string().optional(),
   REPORT_ON_EMPTY: z.enum(["placeholder", "manifest-only", "skip"]).optional(),
+  TIMEZONE: z.string().optional(),
 
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
@@ -53,7 +54,6 @@ const envSchema = z.object({
   LOG_INCLUDE_TIMINGS: z.string().optional(),
   LOG_FORMAT: z.enum(["json", "pretty"]).optional(),
   LOG_COLOR: z.string().optional(),
-  LOG_TIMEZONE: z.string().optional(),
   LOG_CONTEXT_MAX_BYTES: z.coerce.number().int().positive().optional(),
 });
 
@@ -89,7 +89,7 @@ export function loadConfig() {
     ),
     accessKeyId: env.BUCKET_ACCESS_KEY_ID ?? fileConfig.storage.accessKeyId,
     secretAccessKey:
-      env.BUCKET_SECRET_ACCESS_KEY ?? fileConfig.storage.secretAccessKey
+      env.BUCKET_SECRET_ACCESS_KEY ?? fileConfig.storage.secretAccessKey,
   };
 
   if (storage.type === "s3" && !storage.bucket) {
@@ -136,7 +136,8 @@ export function loadConfig() {
       idempotentKey:
         env.REPORT_IDEMPOTENT_KEY ?? fileConfig.report.idempotentKey,
       templates: resolveList(env.REPORT_TEMPLATES, fileConfig.report.templates),
-      backfillWindows: env.BACKFILL_WINDOWS ?? fileConfig.report.backfillWindows,
+      backfillWindows:
+        env.BACKFILL_WINDOWS ?? fileConfig.report.backfillWindows,
       backfillStart: normalizeDateValue(
         env.BACKFILL_START ?? fileConfig.report.backfillStart
       ),
@@ -167,7 +168,7 @@ export function loadConfig() {
       ),
       format: env.LOG_FORMAT ?? fileConfig.logging.format,
       color: resolveBool(env.LOG_COLOR, fileConfig.logging.color),
-      timeZone: env.LOG_TIMEZONE ?? fileConfig.logging.timeZone,
+      timeZone: env.TIMEZONE ?? fileConfig.logging.timeZone,
       contextMaxBytes:
         env.LOG_CONTEXT_MAX_BYTES ?? fileConfig.logging.contextMaxBytes,
     },
@@ -210,7 +211,9 @@ export const fileConfigSchema = z.object({
       backfillWindows: z.coerce.number().int().nonnegative().default(0),
       backfillStart: z.string().optional(),
       backfillEnd: z.string().optional(),
-      onEmpty: z.enum(["placeholder", "manifest-only", "skip"]).default("placeholder"),
+      onEmpty: z
+        .enum(["placeholder", "manifest-only", "skip"])
+        .default("placeholder"),
     })
     .default({}),
   llm: z
