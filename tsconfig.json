@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src", "config.defaults.ts"]
+  "include": ["src", "config.defaults.ts", "jobs.defaults.ts"]
 }

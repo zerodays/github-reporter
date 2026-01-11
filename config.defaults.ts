@@ -15,20 +15,6 @@ export const defaultConfig: ConfigFile = {
     prefix: "reports",
     validateSchema: false,
   },
-  report: {
-    includeInactiveRepos: false,
-    windowDays: 1,
-    maxCommitsPerRepo: 50,
-    maxRepos: 100,
-    maxTotalCommits: 1000,
-    maxTokensHint: 1200,
-    idempotentKey: "",
-    templates: ["dev-diary", "changelog", "twitter"],
-    backfillWindows: 0,
-    backfillStart: "",
-    backfillEnd: "",
-    onEmpty: "placeholder",
-  },
   llm: {
     model: "gemini-3-flash-preview",
     promptTemplate:

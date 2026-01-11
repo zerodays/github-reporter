@@ -45,6 +45,9 @@ Job config moves to `jobs.defaults.ts`:
    - Log job start/end + failures
    - Continue on failure (configurable)
 5. Replace single-run logic in `src/index.ts` with `runJobs`.
+6. Add internal schedule gating (single cron):
+   - Job schedules in `jobs.defaults.ts`
+   - Skip jobs that are not due (based on latest run in index)
 
 ## Phase 2: Job-aware Storage + Indexing (Implementation Details)
 1. Extend manifest to include `jobId`, `jobName`, `scope`, and `templates`.

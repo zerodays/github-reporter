@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Ajv, type ErrorObject } from "ajv";
-import type { ReportInput, ReportOutput } from "./types.js";
+import type { AggregateInput, ReportInput, ReportOutput } from "./types.js";
 
 export type GeneratorConfig = {
   apiKey: string;
@@ -18,6 +18,11 @@ Return the response in the requested format. Be concise and factual. Highlight n
 If repositories have no commits in the window, do not list them individually; instead report a single line with the count.
 Use any repo context provided (overview, readme, llm.txt, diff summaries, diff snippets, PRs, issues) to explain what the project is and what changed.`;
 
+export const aggregatePrompt = `You are a helpful reporter that summarizes a set of daily GitHub activity reports.
+
+Return the response in the requested format. Be concise and factual. Highlight notable changes and themes across the window.
+Do not invent details; only summarize what is present in the daily reports.`;
+
 export async function generateReport(
   input: ReportInput,
   config: GeneratorConfig
@@ -26,6 +31,24 @@ export async function generateReport(
   const model = client.getGenerativeModel({ model: config.model });
 
   const prompt = buildPrompt(input, config);
+  const result = await model.generateContent(prompt);
+  const text = result.response.text().trim();
+  const normalized = normalizeOutput(text, config);
+
+  return {
+    format: config.outputFormat,
+    text: normalized
+  };
+}
+
+export async function generateAggregateReport(
+  input: AggregateInput,
+  config: GeneratorConfig
+): Promise<ReportOutput> {
+  const client = new GoogleGenerativeAI(config.apiKey);
+  const model = client.getGenerativeModel({ model: config.model });
+
+  const prompt = buildAggregatePrompt(input, config);
   const result = await model.generateContent(prompt);
   const text = result.response.text().trim();
   const normalized = normalizeOutput(text, config);
@@ -56,6 +79,37 @@ function buildPrompt(input: ReportInput, config: GeneratorConfig) {
     `${input.owner} (${input.ownerType})`,
     "Data:",
     JSON.stringify(input, null, 2),
+    `Output format: ${config.outputFormat}`
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildAggregatePrompt(input: AggregateInput, config: GeneratorConfig) {
+  const schemaSection = config.outputSchemaJson
+    ? `Output must match this JSON schema:\n${config.outputSchemaJson}`
+    : "";
+  const tokenHint = config.maxTokensHint
+    ? `Keep the output under ${config.maxTokensHint} tokens.`
+    : "";
+
+  const template = config.promptTemplate ?? aggregatePrompt;
+  const itemsText = input.items
+    .map((item) => `# ${item.date}\n${item.content}`)
+    .join("\n\n");
+
+  return [
+    template,
+    schemaSection,
+    tokenHint,
+    "Aggregation window:",
+    `${input.window.start} to ${input.window.end}`,
+    "Owner:",
+    `${input.owner} (${input.ownerType})`,
+    "Source:",
+    `${input.source.jobId} (${input.source.templateId})`,
+    "Daily reports:",
+    itemsText,
     `Output format: ${config.outputFormat}`
   ]
     .filter(Boolean)

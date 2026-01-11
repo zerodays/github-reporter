@@ -7,17 +7,48 @@ type IndexItem = {
   start: string;
   end: string;
   days: number;
+  hours?: number;
   manifestKey: string;
+  jobId?: string;
 };
 
 type Manifest = {
+  schemaVersion?: number;
+  job?: {
+    id: string;
+    name: string;
+    description?: string;
+    mode: "pipeline" | "aggregate" | "stats";
+    version?: string;
+  };
+  status?: "success" | "failed";
+  error?: string;
   owner: string;
   ownerType: "user" | "org";
-  window: { start: string; end: string; days: number };
+  window: { start: string; end: string; days: number; hours?: number };
   timezone?: string;
   templates: { id: string; format: string; key: string; uri: string; size: number }[];
   repos: { name: string; commits: number; prs: number; issues: number }[];
   stats: { repos: number; commits: number; prs: number; issues: number };
+};
+
+type JobRegistryItem = {
+  id: string;
+  name: string;
+  description?: string;
+  mode: "pipeline" | "aggregate" | "stats";
+  windowDays: number;
+  windowHours?: number;
+  templates: string[];
+  outputFormat?: "markdown" | "json";
+  outputPrefix?: string;
+  updatedAt?: string;
+};
+
+type JobRegistry = {
+  owner: string;
+  ownerType: "user" | "org";
+  jobs: JobRegistryItem[];
 };
 
 const defaultOwner = process.env.NEXT_PUBLIC_DEFAULT_OWNER ?? "";
@@ -29,6 +60,8 @@ const prefix = process.env.NEXT_PUBLIC_REPORT_PREFIX ?? "reports";
 export default function ReportViewer() {
   const [ownerType, setOwnerType] = useState<"user" | "org">(defaultOwnerType);
   const [owner, setOwner] = useState(defaultOwner);
+  const [jobs, setJobs] = useState<JobRegistryItem[]>([]);
+  const [jobId, setJobId] = useState("");
   const [latest, setLatest] = useState<Manifest | null>(null);
   const [selected, setSelected] = useState<Manifest | null>(null);
   const [content, setContent] = useState<string>("");
@@ -38,13 +71,33 @@ export default function ReportViewer() {
   const [hasMore, setHasMore] = useState(true);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  const baseIndex = useMemo(
-    () => `${prefix}/_index/${ownerType}/${owner}`,
+  const jobsIndex = useMemo(
+    () => `${prefix}/_index/${ownerType}/${owner}/jobs.json`,
     [ownerType, owner]
   );
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === jobId),
+    [jobs, jobId]
+  );
+  const baseIndex = useMemo(() => {
+    if (!jobId) return "";
+    const jobPrefix = selectedJob?.outputPrefix ?? prefix;
+    return `${jobPrefix}/_index/${ownerType}/${owner}/${jobId}`;
+  }, [ownerType, owner, jobId, selectedJob]);
 
   useEffect(() => {
     if (!owner) return;
+    setItems([]);
+    setMonths([]);
+    setLatest(null);
+    setSelected(null);
+    setContent("");
+    setHasMore(true);
+    void loadJobs();
+  }, [jobsIndex]);
+
+  useEffect(() => {
+    if (!baseIndex) return;
     setItems([]);
     setMonths([]);
     setLatest(null);
@@ -69,6 +122,26 @@ export default function ReportViewer() {
     observer.observe(node);
     return () => observer.disconnect();
   }, [owner, months.length, loading, hasMore]);
+
+  async function loadJobs() {
+    try {
+      const res = await fetch(`/api/reports/${jobsIndex}`);
+      if (res.status === 404) {
+        setJobs([]);
+        setJobId("");
+        return;
+      }
+      if (!res.ok) return;
+      const data = (await res.json()) as JobRegistry;
+      const list = data.jobs ?? [];
+      setJobs(list);
+      if (list.length > 0) {
+        setJobId((current) => current || list[0]?.id || "");
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   async function loadLatest(indexBase: string) {
     try {
@@ -103,7 +176,7 @@ export default function ReportViewer() {
   }
 
   async function loadMore() {
-    if (!owner || loading || !hasMore) return;
+    if (!owner || !baseIndex || loading || !hasMore) return;
     setLoading(true);
     const next = nextMonth(months[months.length - 1]);
     if (!next) {
@@ -169,6 +242,27 @@ export default function ReportViewer() {
               placeholder="vucinatim"
             />
           </label>
+          <label className="grid gap-1">
+            <span className="text-xs uppercase tracking-widest text-zinc-500">
+              Job
+            </span>
+            <select
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+              value={jobId}
+              onChange={(event) => setJobId(event.target.value)}
+              disabled={jobs.length === 0}
+            >
+              {jobs.length === 0 ? (
+                <option value="">No jobs found</option>
+              ) : (
+                jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
           <div className="text-xs text-zinc-500">
             Data source: <span className="text-zinc-300">{baseIndex}</span>
           </div>
@@ -191,7 +285,7 @@ export default function ReportViewer() {
                 {latest.window.start.slice(0, 10)}
               </div>
               <div className="text-xs text-zinc-500">
-                {latest.window.days} day window • {latest.stats.commits} commits
+                {formatWindowLabel(latest.window)} • {latest.stats.commits} commits
               </div>
             </button>
           ) : (
@@ -228,7 +322,7 @@ export default function ReportViewer() {
               >
                 <div className="text-zinc-200">{item.start.slice(0, 10)}</div>
                 <div className="text-zinc-500">
-                  {item.days} day window • {item.manifestKey.split("/").pop()}
+                  {formatIndexLabel(item)} • {item.manifestKey.split("/").pop()}
                 </div>
               </button>
             ))}
@@ -245,7 +339,7 @@ export default function ReportViewer() {
                 {selected.owner} · {selected.window.start.slice(0, 10)}
               </h2>
               <p className="text-sm text-zinc-400">
-                {selected.window.days} day window · {selected.stats.commits} commits ·
+                {formatWindowLabel(selected.window)} · {selected.stats.commits} commits ·
                 {" "}
                 {selected.stats.prs} PRs · {selected.stats.issues} issues
               </p>
@@ -280,4 +374,18 @@ function nextMonth(current?: string) {
   const date = new Date(Date.UTC(year, month - 1, 1));
   date.setUTCMonth(date.getUTCMonth() - 1);
   return date.toISOString().slice(0, 7);
+}
+
+function formatWindowLabel(window: { days: number; hours?: number }) {
+  if (window.hours && window.hours > 0) {
+    return `${window.hours} hour window`;
+  }
+  return `${window.days} day window`;
+}
+
+function formatIndexLabel(item: { days: number; hours?: number }) {
+  if (item.hours && item.hours > 0) {
+    return `${item.hours} hour window`;
+  }
+  return `${item.days} day window`;
 }

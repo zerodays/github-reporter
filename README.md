@@ -5,13 +5,13 @@ Self-hostable microservice that generates daily GitHub activity reports (markdow
 ## Quick start
 
 1. Copy `.env.example` to `.env` and fill in values.
-2. (Optional) Adjust defaults in `config.defaults.ts`.
+2. (Optional) Adjust global defaults in `config.defaults.ts` and job defaults in `jobs.defaults.ts`.
 3. Install deps: `npm install`
 4. Run once: `npm run dev`
 
 ## Config priority
 
-Values are loaded from `config.defaults.ts` first, and environment variables override them when set.
+Values are loaded from `config.defaults.ts` and `jobs.defaults.ts` first. Environment variables override defaults for the default job unless `JOBS_ENABLED` is set.
 
 ## Context enrichment
 
@@ -19,7 +19,17 @@ Enable/disable README, llm.txt, repo metadata, diff summaries, diff snippets, PR
 
 ## Templates
 
-Configure `report.templates` in `config.defaults.ts` to generate multiple outputs (e.g., `dev-diary`, `changelog`, `twitter`). Use `REPORT_TEMPLATES` env to override.
+Configure templates per job in `jobs.defaults.ts` (e.g., `dev-diary`, `changelog`, `twitter`). Use `REPORT_TEMPLATES` env to override the default job.
+
+## Jobs
+
+Set `JOBS_ENABLED` to a comma-separated list of job IDs to run specific jobs (e.g., `daily,weekly-team`). If unset, all jobs in `jobs.defaults.ts` run and the `REPORT_*` env values override the default job.
+
+## Scheduling
+
+Recommended setup is a single external cron (e.g., hourly) with internal scheduling enabled. Each job has a `schedule` in `jobs.defaults.ts`, and the runner skips jobs that are not due.
+
+To disable internal schedule gating and run every enabled job on every invocation, set `RUN_SCHEDULED_ONLY=false`.
 
 ## Backfill
 
@@ -27,15 +37,15 @@ Set `BACKFILL_WINDOWS` (e.g., `7`) or `BACKFILL_START`/`BACKFILL_END` (`YYYY-MM-
 
 ## Window size
 
-Set `REPORT_WINDOW_DAYS` to control the report window length (e.g., `7` for weekly, `30` for monthly-ish).
+Set `REPORT_WINDOW_DAYS` to control the report window length (e.g., `7` for weekly, `30` for monthly-ish). For hourly jobs, use `windowHours` in `jobs.defaults.ts`.
 
 ## Empty windows
 
-Set `REPORT_ON_EMPTY` to control what happens when there is no activity: `placeholder` (default), `manifest-only`, or `skip`.
+Set `REPORT_ON_EMPTY` to control what happens when there is no activity: `manifest-only` (default), `placeholder`, or `skip`.
 
 ## Storage layout
 
-Artifacts are written under `{output.prefix}/{ownerType}/{owner}/{start}__{end}/` with a `manifest.json` per window, plus indices under `{output.prefix}/_index/{ownerType}/{owner}/`.
+Artifacts are written under `{output.prefix}/{ownerType}/{owner}/jobs/{jobId}/{start}__{end}/` with a `manifest.json` per window, plus indices under `{output.prefix}/_index/{ownerType}/{owner}/{jobId}/`.
 
 ## Storage config (S3/R2)
 

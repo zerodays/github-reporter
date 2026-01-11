@@ -46,6 +46,17 @@ export const reportTemplates: ReportTemplate[] = [
       Keep it tight and readable.
     `,
   },
+  {
+    id: "weekly-summary",
+    name: "Weekly Summary",
+    outputFormat: "markdown",
+    instructions: dedent`
+      Write a weekly team summary based on the daily reports.
+      Use short sections: Overview, Highlights, Risks/Follow-ups.
+      Keep tone concise and informative.
+      Avoid repeating the same change across multiple days.
+    `,
+  },
 ];
 
 export function getTemplateById(id: string) {

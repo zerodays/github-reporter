@@ -7,6 +7,7 @@ import {
   HeadObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
+  DeleteObjectCommand,
   HeadBucketCommand
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
@@ -32,6 +33,7 @@ export type StorageClient = {
   get: (key: string) => Promise<string | null>;
   exists: (key: string) => Promise<boolean>;
   list: (prefix: string) => Promise<string[]>;
+  delete: (key: string) => Promise<void>;
 };
 
 export function describeStorage(config: StorageConfig) {
@@ -131,6 +133,15 @@ function createLocalClient(): StorageClient {
       } catch {
         return [];
       }
+    },
+    async delete(key) {
+      const filePath = join(basePath, key);
+      try {
+        await access(filePath, fsConstants.F_OK);
+        await (await import("node:fs/promises")).rm(filePath, { force: true });
+      } catch {
+        return;
+      }
     }
   };
 }
@@ -212,6 +223,11 @@ function createS3Client(config: StorageConfig): StorageClient {
         continuationToken = response.NextContinuationToken;
       } while (continuationToken);
       return keys;
+    },
+    async delete(key) {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: config.bucket, Key: key })
+      );
     }
   };
 }

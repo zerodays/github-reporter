@@ -37,6 +37,15 @@ export type ReportInput = {
   inactiveRepoCount?: number;
 };
 
+export type AggregateInput = {
+  owner: string;
+  ownerType: "user" | "org";
+  window: ActivityWindow;
+  job: { id: string; name: string };
+  source: { jobId: string; templateId: string };
+  items: { date: string; manifestKey: string; content: string }[];
+};
+
 export type RepoContext = {
   overview?: RepoOverview;
   diffSummary?: CommitDiffSummary[];
@@ -117,6 +126,8 @@ export type StoredArtifact = {
 export type WebhookPayload = {
   owner: string;
   ownerType: "user" | "org";
+  jobId?: string;
+  jobName?: string;
   window: ActivityWindow;
   artifact: StoredArtifact;
   format: "markdown" | "json";

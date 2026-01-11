@@ -19,18 +19,6 @@ const envSchema = z.object({
   OUTPUT_SCHEMA_JSON: z.string().optional(),
   OUTPUT_PREFIX: z.string().optional(),
   OUTPUT_VALIDATE_SCHEMA: z.string().optional(),
-  INCLUDE_INACTIVE_REPOS: z.string().optional(),
-  MAX_COMMITS_PER_REPO: z.coerce.number().int().positive().optional(),
-  MAX_REPOS: z.coerce.number().int().positive().optional(),
-  MAX_TOTAL_COMMITS: z.coerce.number().int().positive().optional(),
-  MAX_TOKENS_HINT: z.coerce.number().int().positive().optional(),
-  REPORT_IDEMPOTENT_KEY: z.string().optional(),
-  REPORT_TEMPLATES: z.string().optional(),
-  REPORT_WINDOW_DAYS: z.coerce.number().int().positive().optional(),
-  BACKFILL_WINDOWS: z.coerce.number().int().nonnegative().optional(),
-  BACKFILL_START: z.string().optional(),
-  BACKFILL_END: z.string().optional(),
-  REPORT_ON_EMPTY: z.enum(["placeholder", "manifest-only", "skip"]).optional(),
   TIMEZONE: z.string().optional(),
 
   GEMINI_API_KEY: z.string().optional(),
@@ -121,31 +109,6 @@ export function loadConfig() {
         fileConfig.output.validateSchema
       ),
     },
-    report: {
-      includeInactiveRepos: resolveBool(
-        env.INCLUDE_INACTIVE_REPOS,
-        fileConfig.report.includeInactiveRepos
-      ),
-      windowDays: env.REPORT_WINDOW_DAYS ?? fileConfig.report.windowDays,
-      maxCommitsPerRepo:
-        env.MAX_COMMITS_PER_REPO ?? fileConfig.report.maxCommitsPerRepo,
-      maxRepos: env.MAX_REPOS ?? fileConfig.report.maxRepos,
-      maxTotalCommits:
-        env.MAX_TOTAL_COMMITS ?? fileConfig.report.maxTotalCommits,
-      maxTokensHint: env.MAX_TOKENS_HINT ?? fileConfig.report.maxTokensHint,
-      idempotentKey:
-        env.REPORT_IDEMPOTENT_KEY ?? fileConfig.report.idempotentKey,
-      templates: resolveList(env.REPORT_TEMPLATES, fileConfig.report.templates),
-      backfillWindows:
-        env.BACKFILL_WINDOWS ?? fileConfig.report.backfillWindows,
-      backfillStart: normalizeDateValue(
-        env.BACKFILL_START ?? fileConfig.report.backfillStart
-      ),
-      backfillEnd: normalizeDateValue(
-        env.BACKFILL_END ?? fileConfig.report.backfillEnd
-      ),
-      onEmpty: env.REPORT_ON_EMPTY ?? fileConfig.report.onEmpty,
-    },
     llm: {
       apiKey,
       model: env.GEMINI_MODEL ?? fileConfig.llm.model,
@@ -196,24 +159,6 @@ export const fileConfigSchema = z.object({
       schemaJson: z.string().optional(),
       prefix: z.string().default("reports"),
       validateSchema: z.boolean().default(false),
-    })
-    .default({}),
-  report: z
-    .object({
-      includeInactiveRepos: z.boolean().default(false),
-      windowDays: z.coerce.number().int().positive().default(1),
-      maxCommitsPerRepo: z.coerce.number().int().positive().optional(),
-      maxRepos: z.coerce.number().int().positive().default(100),
-      maxTotalCommits: z.coerce.number().int().positive().default(1000),
-      maxTokensHint: z.coerce.number().int().positive().optional(),
-      idempotentKey: z.string().optional(),
-      templates: z.array(z.string()).default([]),
-      backfillWindows: z.coerce.number().int().nonnegative().default(0),
-      backfillStart: z.string().optional(),
-      backfillEnd: z.string().optional(),
-      onEmpty: z
-        .enum(["placeholder", "manifest-only", "skip"])
-        .default("placeholder"),
     })
     .default({}),
   llm: z
@@ -295,12 +240,6 @@ function resolveList(value: string | undefined, fallback: string[]) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function normalizeDateValue(value: string | undefined) {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
 }
 
 function resolveBucketName(

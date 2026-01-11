@@ -28,6 +28,7 @@ export async function enrichReposWithContext(args: {
   config: AppConfig;
   rateLimit: RateLimitInfo;
   logger: ContextLogger;
+  providerAllowlist?: string[];
 }) {
   const octokit = new Octokit({
     auth: args.config.github.token
@@ -40,7 +41,14 @@ export async function enrichReposWithContext(args: {
     error?: string;
   }[] = [];
 
-  for (const provider of providers) {
+  const allowed =
+    args.providerAllowlist && args.providerAllowlist.length > 0
+      ? providers.filter((provider) =>
+          args.providerAllowlist?.includes(provider.name)
+        )
+      : providers;
+
+  for (const provider of allowed) {
     const start = Date.now();
     try {
       await withRetry(
