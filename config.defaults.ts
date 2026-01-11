@@ -1,0 +1,75 @@
+import type { ConfigFile } from "./src/config.ts";
+
+export const defaultConfig: ConfigFile = {
+  github: {
+    ownerType: "user",
+    lookbackHours: 24,
+    perPage: 100,
+    maxPages: 5,
+    allowlist: [],
+    blocklist: [],
+    includePrivate: false,
+  },
+  output: {
+    format: "markdown",
+    prefix: "reports",
+    validateSchema: false,
+  },
+  report: {
+    includeInactiveRepos: false,
+    maxCommitsPerRepo: 50,
+    maxRepos: 100,
+    maxTotalCommits: 1000,
+    maxTokensHint: 1200,
+    idempotentKey: "",
+    templates: ["dev-diary", "changelog", "twitter"],
+  },
+  llm: {
+    model: "gemini-3-flash-preview",
+    promptTemplate:
+      "You are a helpful reporter that summarizes GitHub activity.\n\nReturn the response in the requested format. Be concise and factual. Highlight notable changes and themes.\nIf repositories have no commits in the window, do not list them individually; instead report a single line with the count.",
+  },
+  storage: {
+    type: "local",
+  },
+  network: {
+    retryCount: 2,
+    retryBackoffMs: 500,
+  },
+  logging: {
+    level: "info",
+    includeTimings: true,
+    format: "pretty",
+    color: true,
+    timeZone: "Europe/Ljubljana",
+    contextMaxBytes: 4000,
+  },
+  webhook: {},
+  context: {
+    includeReadme: true,
+    includeLlmTxt: true,
+    includeRepoDescription: true,
+    includeRepoTopics: true,
+    includeDiffSummary: true,
+    includeDiffSnippets: true,
+    maxReadmeBytes: 12000,
+    maxLlmTxtBytes: 8000,
+    maxDiffFilesPerCommit: 20,
+    maxDiffCommitsPerRepo: 10,
+    maxSnippetCommitsPerRepo: 5,
+    maxSnippetFilesPerCommit: 3,
+    maxSnippetLinesPerFile: 40,
+    maxSnippetBytesPerRepo: 8000,
+    ignoreExtensions: [
+      ".lock",
+      ".min.js",
+      ".min.css",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".svg",
+      ".webp"
+    ]
+  },
+};
