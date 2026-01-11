@@ -17,12 +17,16 @@ export const defaultConfig: ConfigFile = {
   },
   report: {
     includeInactiveRepos: false,
+    windowDays: 1,
     maxCommitsPerRepo: 50,
     maxRepos: 100,
     maxTotalCommits: 1000,
     maxTokensHint: 1200,
     idempotentKey: "",
     templates: ["dev-diary", "changelog", "twitter"],
+    backfillDays: 0,
+    backfillStart: "",
+    backfillEnd: "",
   },
   llm: {
     model: "gemini-3-flash-preview",

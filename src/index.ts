@@ -24,12 +24,53 @@ async function main() {
   });
   runLogger.info("run.start");
   const now = new Date();
-  const start = new Date(now.getTime() - config.github.lookbackHours * 60 * 60 * 1000);
+  const windows = buildWindows(config, now);
+  if (windows.length > 1) {
+    runLogger.info("backfill.start", {
+      days: windows.length,
+      start: formatTimestamp(new Date(windows[0].start), config.logging.timeZone),
+      end: formatTimestamp(
+        new Date(windows[windows.length - 1].end),
+        config.logging.timeZone
+      )
+    });
+  }
 
-  const window = {
-    start: start.toISOString(),
-    end: now.toISOString()
-  };
+  for (const window of windows) {
+    await runForWindow(window, config, runLogger);
+  }
+}
+
+function buildArtifactKey(
+  date: Date,
+  extension: string,
+  idempotentKey?: string,
+  templateId?: string
+) {
+  if (!idempotentKey) {
+    const suffix = templateId ? `.${templateId}` : "";
+    return `${slugDate(date)}${suffix}.${extension}`;
+  }
+  if (idempotentKey === "daily") {
+    const daily = date.toISOString().slice(0, 10);
+    const suffix = templateId ? `.${templateId}` : "";
+    return `${daily}${suffix}.${extension}`;
+  }
+  const suffix = templateId ? `.${templateId}` : "";
+  return `${idempotentKey}${suffix}.${extension}`;
+}
+
+function slugDate(date: Date) {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+async function runForWindow(
+  window: { start: string; end: string },
+  config: ReturnType<typeof loadConfig>,
+  runLogger: ReturnType<typeof logger.withContext>
+) {
+  const windowStart = new Date(window.start);
+  const windowEnd = new Date(window.end);
 
   const fetchStart = Date.now();
   runLogger.info("github.fetch.start", {
@@ -39,8 +80,8 @@ async function main() {
     perPage: config.github.perPage,
     maxPages: config.github.maxPages,
     window: {
-      start: formatTimestamp(start, config.logging.timeZone),
-      end: formatTimestamp(now, config.logging.timeZone)
+      start: formatTimestamp(windowStart, config.logging.timeZone),
+      end: formatTimestamp(windowEnd, config.logging.timeZone)
     }
   });
   const { repos, rateLimit } = await withRetry(
@@ -63,6 +104,7 @@ async function main() {
       backoffMs: config.network.retryBackoffMs
     }
   );
+
   const cappedRepos = config.report.maxRepos
     ? repos.slice(0, config.report.maxRepos)
     : repos;
@@ -126,7 +168,9 @@ async function main() {
     ownerType: config.github.ownerType,
     window,
     repos: reposForReport,
-    inactiveRepoCount: config.report.includeInactiveRepos ? undefined : inactiveRepoCount
+    inactiveRepoCount: config.report.includeInactiveRepos
+      ? undefined
+      : inactiveRepoCount
   };
 
   const storageConfig = {
@@ -157,7 +201,7 @@ async function main() {
       : config.llm.promptTemplate ?? basePrompt;
     const extension = outputFormat === "json" ? "json" : "md";
     const key = buildArtifactKey(
-      now,
+      windowStart,
       extension,
       config.report.idempotentKey,
       template?.id ?? "default"
@@ -165,7 +209,10 @@ async function main() {
 
     const exists = await artifactExists(storageConfig, key);
     if (config.report.idempotentKey && exists) {
-      runLogger.info("run.skipped", { key, template: template?.id ?? "default" });
+      runLogger.info("run.skipped", {
+        key,
+        template: template?.id ?? "default"
+      });
       continue;
     }
 
@@ -245,31 +292,56 @@ async function main() {
       template: template?.id ?? "default"
     });
   }
-
-  return;
 }
 
-function buildArtifactKey(
-  date: Date,
-  extension: string,
-  idempotentKey?: string,
-  templateId?: string
+function buildWindows(
+  config: ReturnType<typeof loadConfig>,
+  now: Date
 ) {
-  if (!idempotentKey) {
-    const suffix = templateId ? `.${templateId}` : "";
-    return `${slugDate(date)}${suffix}.${extension}`;
+  if (
+    !config.report.backfillDays &&
+    !config.report.backfillStart &&
+    !config.report.backfillEnd
+  ) {
+    const windowDays = config.report.windowDays ?? 1;
+    const start = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+    return [
+      {
+        start: start.toISOString(),
+        end: now.toISOString()
+      }
+    ];
   }
-  if (idempotentKey === "daily") {
-    const daily = date.toISOString().slice(0, 10);
-    const suffix = templateId ? `.${templateId}` : "";
-    return `${daily}${suffix}.${extension}`;
+
+  const endDate = config.report.backfillEnd
+    ? parseDateOnly(config.report.backfillEnd)
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startDate = config.report.backfillStart
+    ? parseDateOnly(config.report.backfillStart)
+    : new Date(endDate.getTime());
+
+  if (config.report.backfillDays && config.report.backfillDays > 0) {
+    startDate.setUTCDate(endDate.getUTCDate() - (config.report.backfillDays - 1));
   }
-  const suffix = templateId ? `.${templateId}` : "";
-  return `${idempotentKey}${suffix}.${extension}`;
+
+  const windows = [];
+  let cursor = new Date(startDate.getTime());
+  const windowDays = config.report.windowDays ?? 1;
+  while (cursor <= endDate) {
+    const next = new Date(cursor.getTime());
+    next.setUTCDate(next.getUTCDate() + windowDays);
+    windows.push({
+      start: cursor.toISOString(),
+      end: next.toISOString()
+    });
+    cursor = next;
+  }
+  return windows;
 }
 
-function slugDate(date: Date) {
-  return date.toISOString().replace(/[:.]/g, "-");
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
 }
 
 function applyCommitBudget(

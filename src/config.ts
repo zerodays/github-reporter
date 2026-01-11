@@ -26,6 +26,10 @@ const envSchema = z.object({
   MAX_TOKENS_HINT: z.coerce.number().int().positive().optional(),
   REPORT_IDEMPOTENT_KEY: z.string().optional(),
   REPORT_TEMPLATES: z.string().optional(),
+  REPORT_WINDOW_DAYS: z.coerce.number().int().positive().optional(),
+  BACKFILL_DAYS: z.coerce.number().int().nonnegative().optional(),
+  BACKFILL_START: z.string().optional(),
+  BACKFILL_END: z.string().optional(),
 
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
@@ -100,6 +104,7 @@ export function loadConfig() {
         env.INCLUDE_INACTIVE_REPOS,
         fileConfig.report.includeInactiveRepos
       ),
+      windowDays: env.REPORT_WINDOW_DAYS ?? fileConfig.report.windowDays,
       maxCommitsPerRepo:
         env.MAX_COMMITS_PER_REPO ?? fileConfig.report.maxCommitsPerRepo,
       maxRepos: env.MAX_REPOS ?? fileConfig.report.maxRepos,
@@ -109,6 +114,13 @@ export function loadConfig() {
       idempotentKey:
         env.REPORT_IDEMPOTENT_KEY ?? fileConfig.report.idempotentKey,
       templates: resolveList(env.REPORT_TEMPLATES, fileConfig.report.templates),
+      backfillDays: env.BACKFILL_DAYS ?? fileConfig.report.backfillDays,
+      backfillStart: normalizeDateValue(
+        env.BACKFILL_START ?? fileConfig.report.backfillStart
+      ),
+      backfillEnd: normalizeDateValue(
+        env.BACKFILL_END ?? fileConfig.report.backfillEnd
+      ),
     },
     llm: {
       apiKey,
@@ -172,12 +184,16 @@ export const fileConfigSchema = z.object({
   report: z
     .object({
       includeInactiveRepos: z.boolean().default(false),
+      windowDays: z.coerce.number().int().positive().default(1),
       maxCommitsPerRepo: z.coerce.number().int().positive().optional(),
       maxRepos: z.coerce.number().int().positive().default(100),
       maxTotalCommits: z.coerce.number().int().positive().default(1000),
       maxTokensHint: z.coerce.number().int().positive().optional(),
       idempotentKey: z.string().optional(),
       templates: z.array(z.string()).default([]),
+      backfillDays: z.coerce.number().int().nonnegative().default(0),
+      backfillStart: z.string().optional(),
+      backfillEnd: z.string().optional(),
     })
     .default({}),
   llm: z
@@ -252,4 +268,10 @@ function resolveList(value: string | undefined, fallback: string[]) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeDateValue(value: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
 }

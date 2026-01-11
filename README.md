@@ -21,6 +21,14 @@ Enable/disable README, llm.txt, repo metadata, diff summaries, and diff snippets
 
 Configure `report.templates` in `config.defaults.ts` to generate multiple outputs (e.g., `dev-diary`, `changelog`, `twitter`). Use `REPORT_TEMPLATES` env to override.
 
+## Backfill
+
+Set `BACKFILL_DAYS` (e.g., `7`) or `BACKFILL_START`/`BACKFILL_END` (`YYYY-MM-DD`) to generate historical daily reports.
+
+## Window size
+
+Set `REPORT_WINDOW_DAYS` to control the report window length (e.g., `7` for weekly, `30` for monthly-ish).
+
 ## Local setup (personal GitHub)
 
 1. Create a GitHub token: Settings → Developer settings → Personal access tokens.
