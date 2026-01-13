@@ -3,7 +3,6 @@ import type { ConfigFile } from "./src/config.ts";
 export const defaultConfig: ConfigFile = {
   github: {
     ownerType: "user",
-    lookbackHours: 24,
     perPage: 100,
     maxPages: 5,
     allowlist: [],
@@ -13,12 +12,9 @@ export const defaultConfig: ConfigFile = {
   output: {
     format: "markdown",
     prefix: "reports",
-    validateSchema: false,
   },
   llm: {
     model: "gemini-3-flash-preview",
-    promptTemplate:
-      "You are a helpful reporter that summarizes GitHub activity.\n\nReturn the response in the requested format. Be concise and factual. Highlight notable changes and themes.\nIf repositories have no commits in the window, do not list them individually; instead report a single line with the count.",
   },
   storage: {
     type: "local",
@@ -37,7 +33,6 @@ export const defaultConfig: ConfigFile = {
     format: "pretty",
     color: true,
     timeZone: "Europe/Ljubljana",
-    contextMaxBytes: 4000,
   },
   webhook: {},
   context: {

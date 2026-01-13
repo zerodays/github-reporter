@@ -23,6 +23,9 @@ export type ReportManifest = {
   error?: string;
   owner: string;
   ownerType: "user" | "org";
+  scheduledAt: string;
+  slotKey: string;
+  slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
   window: {
     start: string;
     end: string;
@@ -37,6 +40,9 @@ export type ReportManifest = {
 };
 
 export type IndexItem = {
+  slotKey: string;
+  slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+  scheduledAt: string;
   start: string;
   end: string;
   days: number;
@@ -50,8 +56,14 @@ export type JobRegistryItem = {
   name: string;
   description?: string;
   mode: "pipeline" | "aggregate" | "stats";
-  windowDays: number;
-  windowHours?: number;
+  schedule: {
+    type: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+    minute?: number;
+    hour?: number;
+    weekday?: number;
+    dayOfMonth?: number;
+    month?: number;
+  };
   templates: string[];
   outputFormat?: "markdown" | "json";
   outputPrefix?: string;
@@ -116,6 +128,9 @@ export function buildManifest(
   ownerType: "user" | "org",
   window: { start: string; end: string; days: number; hours?: number },
   timezone: string | undefined,
+  scheduledAt: string,
+  slotKey: string,
+  slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly",
   repos: RepoActivity[],
   artifacts: { id: string; format: string; stored: StoredArtifact }[],
   empty: boolean,
@@ -158,6 +173,9 @@ export function buildManifest(
     status: "success",
     owner,
     ownerType,
+    scheduledAt,
+    slotKey,
+    slotType,
     window,
     timezone,
     empty,
@@ -172,6 +190,9 @@ export function buildFailedManifest(args: {
   ownerType: "user" | "org";
   window: { start: string; end: string; days: number; hours?: number };
   timezone: string | undefined;
+  scheduledAt: string;
+  slotKey: string;
+  slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
   job: JobConfig;
   error: string;
 }): ReportManifest {
@@ -188,6 +209,9 @@ export function buildFailedManifest(args: {
     error: args.error,
     owner: args.owner,
     ownerType: args.ownerType,
+    scheduledAt: args.scheduledAt,
+    slotKey: args.slotKey,
+    slotType: args.slotType,
     window: args.window,
     timezone: args.timezone,
     empty: true,
@@ -208,6 +232,9 @@ export async function writeSummary(
       owner: manifest.owner,
       ownerType: manifest.ownerType,
       jobId: manifest.job.id,
+      slotKey: manifest.slotKey,
+      slotType: manifest.slotType,
+      scheduledAt: manifest.scheduledAt,
       window: manifest.window,
       status: manifest.status ?? "success",
       empty: manifest.empty ?? false,
@@ -234,16 +261,12 @@ export async function writeJobsRegistry(
     : { owner, ownerType, jobs: [], updatedAt: new Date().toISOString() };
   const jobs: JobRegistryItem[] = parsed.jobs ?? [];
   const now = new Date().toISOString();
-  const windowDays = job.windowHours
-    ? job.windowHours / 24
-    : job.windowDays ?? 1;
   const next: JobRegistryItem = {
     id: job.id,
     name: job.name,
     description: job.description,
     mode: job.mode,
-    windowDays,
-    windowHours: job.windowHours,
+    schedule: job.schedule!,
     templates: job.templates,
     outputFormat: job.outputFormat,
     outputPrefix: job.outputPrefix,

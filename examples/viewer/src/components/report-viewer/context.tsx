@@ -19,8 +19,14 @@ const JobRegistryItemSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   mode: z.enum(["pipeline", "aggregate", "stats"]),
-  windowDays: z.number(),
-  windowHours: z.number().optional(),
+  schedule: z.object({
+    type: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]),
+    minute: z.number().optional(),
+    hour: z.number().optional(),
+    weekday: z.number().optional(),
+    dayOfMonth: z.number().optional(),
+    month: z.number().optional(),
+  }),
   templates: z.array(z.string()),
   outputFormat: z.enum(["markdown", "json"]).optional(),
   outputPrefix: z.string().optional(),
@@ -35,6 +41,9 @@ const JobRegistrySchema = z.object({
 });
 
 const IndexItemSchema = z.object({
+  slotKey: z.string(),
+  slotType: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]),
+  scheduledAt: z.string(),
   start: z.string(),
   end: z.string(),
   days: z.number(),
@@ -48,6 +57,9 @@ const SummarySchema = z.object({
   owner: z.string(),
   ownerType: OwnerTypeSchema,
   jobId: z.string(),
+  slotKey: z.string(),
+  slotType: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]),
+  scheduledAt: z.string(),
   window: z.object({
     start: z.string(),
     end: z.string(),
@@ -76,6 +88,9 @@ const ManifestSchema = z.object({
   error: z.string().optional(),
   owner: z.string(),
   ownerType: OwnerTypeSchema,
+  scheduledAt: z.string(),
+  slotKey: z.string(),
+  slotType: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]),
   window: z.object({
     start: z.string(),
     end: z.string(),
@@ -148,9 +163,10 @@ const defaultOwner = process.env.NEXT_PUBLIC_DEFAULT_OWNER ?? "";
 const defaultOwnerType = (process.env.NEXT_PUBLIC_DEFAULT_OWNER_TYPE ??
   "user") as OwnerType;
 const prefix = process.env.NEXT_PUBLIC_REPORT_PREFIX ?? "reports";
+const VIEWER_TIME_ZONE = "Europe/Ljubljana";
 
 function getCurrentMonthKey() {
-  return new Date().toISOString().slice(0, 7);
+  return getMonthKeyInTimeZone(new Date(), VIEWER_TIME_ZONE);
 }
 
 function getRecentMonths(count: number) {
@@ -159,7 +175,7 @@ function getRecentMonths(count: number) {
   for (let i = 0; i < count; i += 1) {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     date.setUTCMonth(date.getUTCMonth() - i);
-    months.push(date.toISOString().slice(0, 7));
+    months.push(getMonthKeyInTimeZone(date, VIEWER_TIME_ZONE));
   }
   return months;
 }
@@ -225,8 +241,8 @@ export function ReportViewerProvider({
   const itemsByDay = useMemo(() => {
     const map = new Map<string, IndexItemWithSummary[]>();
     for (const item of items) {
-      if (!item.start.startsWith(activeMonth)) continue;
-      const dayKey = item.start.slice(0, 10);
+      const dayKey = getDayKeyInTimeZone(item.scheduledAt, VIEWER_TIME_ZONE);
+      if (!dayKey.startsWith(activeMonth)) continue;
       const entry = map.get(dayKey);
       if (entry) {
         entry.push(item);
@@ -235,12 +251,14 @@ export function ReportViewerProvider({
       }
     }
     for (const list of map.values()) {
-      list.sort((a, b) => b.start.localeCompare(a.start));
+      list.sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
     }
     return map;
   }, [items, activeMonth]);
 
-  const selectedDayKey = selectedManifest?.window.start.slice(0, 10);
+  const selectedDayKey = selectedManifest
+    ? getDayKeyInTimeZone(selectedManifest.scheduledAt, VIEWER_TIME_ZONE)
+    : undefined;
 
   const loadJobs = useCallback(async () => {
     if (!owner) return;
@@ -473,7 +491,7 @@ export function formatMonthLabel(monthKey: string) {
   return new Date(Date.UTC(year, month - 1, 1)).toLocaleString("en-US", {
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: VIEWER_TIME_ZONE,
   });
 }
 
@@ -487,4 +505,32 @@ export function listDaysInMonth(monthKey: string) {
     days.push(`${monthKey}-${dayString}`);
   }
   return days;
+}
+
+function getMonthKeyInTimeZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  ) as { year: string; month: string };
+  return `${map.year}-${map.month}`;
+}
+
+function getDayKeyInTimeZone(value: string, timeZone: string) {
+  const date = new Date(value);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  ) as { year: string; month: string; day: string };
+  return `${map.year}-${map.month}-${map.day}`;
 }

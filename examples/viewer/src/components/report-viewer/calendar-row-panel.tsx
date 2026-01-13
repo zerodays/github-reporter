@@ -11,8 +11,14 @@ export function CalendarRowPanel() {
     useReportViewer();
   const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
+    timeZone: "Europe/Ljubljana",
   });
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Ljubljana",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
   return (
     <Card className="border-border/60 bg-background/70 shadow-sm backdrop-blur p-0 sm:p-0">

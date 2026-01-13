@@ -8,7 +8,6 @@ const envSchema = z.object({
   GITHUB_TOKEN: z.string().optional(),
   GITHUB_OWNER: z.string().optional(),
   GITHUB_OWNER_TYPE: z.enum(["user", "org"]).optional(),
-  REPORT_LOOKBACK_HOURS: z.coerce.number().optional(),
   GITHUB_PER_PAGE: z.coerce.number().int().positive().optional(),
   GITHUB_MAX_PAGES: z.coerce.number().int().positive().optional(),
   REPO_ALLOWLIST: z.string().optional(),
@@ -18,12 +17,10 @@ const envSchema = z.object({
   OUTPUT_FORMAT: z.enum(["markdown", "json"]).optional(),
   OUTPUT_SCHEMA_JSON: z.string().optional(),
   OUTPUT_PREFIX: z.string().optional(),
-  OUTPUT_VALIDATE_SCHEMA: z.string().optional(),
   TIMEZONE: z.string().optional(),
 
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
-  PROMPT_TEMPLATE: z.string().optional(),
 
   BUCKET_TYPE: z.string().optional(),
   BUCKET_URI: z.string().optional(),
@@ -42,7 +39,6 @@ const envSchema = z.object({
   LOG_INCLUDE_TIMINGS: z.string().optional(),
   LOG_FORMAT: z.enum(["json", "pretty"]).optional(),
   LOG_COLOR: z.string().optional(),
-  LOG_CONTEXT_MAX_BYTES: z.coerce.number().int().positive().optional(),
 });
 
 export type AppConfig = ReturnType<typeof loadConfig>;
@@ -89,8 +85,6 @@ export function loadConfig() {
       token: env.GITHUB_TOKEN ?? fileConfig.github.token,
       owner,
       ownerType: env.GITHUB_OWNER_TYPE ?? fileConfig.github.ownerType,
-      lookbackHours:
-        env.REPORT_LOOKBACK_HOURS ?? fileConfig.github.lookbackHours,
       perPage: env.GITHUB_PER_PAGE ?? fileConfig.github.perPage,
       maxPages: env.GITHUB_MAX_PAGES ?? fileConfig.github.maxPages,
       allowlist,
@@ -104,15 +98,10 @@ export function loadConfig() {
       format: env.OUTPUT_FORMAT ?? fileConfig.output.format,
       schemaJson: env.OUTPUT_SCHEMA_JSON ?? fileConfig.output.schemaJson,
       prefix: env.OUTPUT_PREFIX ?? fileConfig.output.prefix,
-      validateSchema: resolveBool(
-        env.OUTPUT_VALIDATE_SCHEMA,
-        fileConfig.output.validateSchema
-      ),
     },
     llm: {
       apiKey,
       model: env.GEMINI_MODEL ?? fileConfig.llm.model,
-      promptTemplate: env.PROMPT_TEMPLATE ?? fileConfig.llm.promptTemplate,
     },
     storage,
     webhook: {
@@ -132,8 +121,6 @@ export function loadConfig() {
       format: env.LOG_FORMAT ?? fileConfig.logging.format,
       color: resolveBool(env.LOG_COLOR, fileConfig.logging.color),
       timeZone: env.TIMEZONE ?? fileConfig.logging.timeZone,
-      contextMaxBytes:
-        env.LOG_CONTEXT_MAX_BYTES ?? fileConfig.logging.contextMaxBytes,
     },
     context: fileConfig.context,
   };
@@ -145,7 +132,6 @@ export const fileConfigSchema = z.object({
       token: z.string().optional(),
       owner: z.string().optional(),
       ownerType: z.enum(["user", "org"]).default("user"),
-      lookbackHours: z.coerce.number().int().positive().default(24),
       perPage: z.coerce.number().int().positive().default(100),
       maxPages: z.coerce.number().int().positive().default(5),
       allowlist: z.array(z.string()).default([]),
@@ -158,14 +144,12 @@ export const fileConfigSchema = z.object({
       format: z.enum(["markdown", "json"]).default("markdown"),
       schemaJson: z.string().optional(),
       prefix: z.string().default("reports"),
-      validateSchema: z.boolean().default(false),
     })
     .default({}),
   llm: z
     .object({
       apiKey: z.string().optional(),
       model: z.string().default("gemini-3-flash-preview"),
-      promptTemplate: z.string().optional(),
     })
     .default({}),
   storage: z
@@ -192,7 +176,6 @@ export const fileConfigSchema = z.object({
       format: z.enum(["json", "pretty"]).default("json"),
       color: z.boolean().default(false),
       timeZone: z.string().optional(),
-      contextMaxBytes: z.coerce.number().int().positive().default(4000),
     })
     .default({}),
   webhook: z

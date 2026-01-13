@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Ajv, type ErrorObject } from "ajv";
 import type { AggregateInput, ReportInput, ReportOutput } from "./types.js";
 
 export type GeneratorConfig = {
@@ -8,7 +7,6 @@ export type GeneratorConfig = {
   promptTemplate?: string;
   outputFormat: "markdown" | "json";
   outputSchemaJson?: string;
-  validateSchema: boolean;
   maxTokensHint?: number;
 };
 
@@ -126,22 +124,6 @@ function normalizeOutput(text: string, config: GeneratorConfig) {
     parsed = JSON.parse(text);
   } catch (error) {
     throw new Error("LLM output is not valid JSON.");
-  }
-
-  if (config.validateSchema && config.outputSchemaJson) {
-    const ajv = new Ajv({ allErrors: true, strict: false });
-    const schema = JSON.parse(config.outputSchemaJson);
-    const validate = ajv.compile(schema);
-    const valid = validate(parsed);
-    if (!valid) {
-      const details = validate.errors
-        ?.map((err: ErrorObject) => err.message)
-        .join(", ");
-      const payload = JSON.stringify(validate.errors ?? []);
-      throw new Error(
-        `LLM output failed schema validation: ${details}. Errors: ${payload}`
-      );
-    }
   }
 
   return JSON.stringify(parsed, null, 2);

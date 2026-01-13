@@ -32,6 +32,9 @@ import {
 import type { IndexItem, ReportManifest } from "./manifest.js";
 import { getScheduleDecision } from "./scheduler.js";
 import { collectHourlyStats } from "./stats.js";
+import { listSlots } from "./slots.js";
+
+const DEFAULT_CONTEXT_SNAPSHOT_BYTES = 4000;
 
 async function main() {
   const config = loadConfig();
@@ -107,19 +110,24 @@ async function runJob(
     });
   }
 
-  const windows = buildWindows(job, now);
+  const slots = listSlots({
+    now,
+    schedule: job.schedule!,
+    timeZone: config.logging.timeZone ?? "UTC",
+    backfillSlots: job.backfillSlots
+  });
   jobLogger.info("job.start", {
-    windowDays: job.windowDays,
-    windows: windows.length,
+    schedule: job.schedule?.type ?? "unscheduled",
+    slots: slots.length,
     mode: job.mode
   });
 
-  if (windows.length > 1) {
+  if (slots.length > 1) {
     jobLogger.info("backfill.start", {
-      days: windows.length,
-      start: formatTimestamp(new Date(windows[0].start), config.logging.timeZone),
+      slots: slots.length,
+      start: formatTimestamp(new Date(slots[slots.length - 1].window.start), config.logging.timeZone),
       end: formatTimestamp(
-        new Date(windows[windows.length - 1].end),
+        new Date(slots[0].window.end),
         config.logging.timeZone
       )
     });
@@ -129,35 +137,41 @@ async function runJob(
   await writeJobsRegistry(storage, jobsKey, jobOwner, jobOwnerType, job);
 
   if (job.mode === "aggregate") {
-    for (const window of windows) {
-      await runAggregateWindow(window, job, config, jobLogger, storage);
+    for (const slot of slots) {
+      await runAggregateWindow(slot, job, config, jobLogger, storage);
     }
-    jobLogger.info("job.complete", { windows: windows.length });
+    jobLogger.info("job.complete", { slots: slots.length });
     return;
   }
 
   if (job.mode === "stats") {
-    for (const window of windows) {
-      await runStatsWindow(window, job, config, jobLogger, storage);
+    for (const slot of slots) {
+      await runStatsWindow(slot, job, config, jobLogger, storage);
     }
-    jobLogger.info("job.complete", { windows: windows.length });
+    jobLogger.info("job.complete", { slots: slots.length });
     return;
   }
 
-  for (const window of windows) {
-    await runForWindow(window, job, config, jobLogger, storage);
+  for (const slot of slots) {
+    await runForWindow(slot, job, config, jobLogger, storage);
   }
 
-  jobLogger.info("job.complete", { windows: windows.length });
+  jobLogger.info("job.complete", { slots: slots.length });
 }
 
 async function runForWindow(
-  window: { start: string; end: string },
+  slot: {
+    slotKey: string;
+    slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+    scheduledAt: string;
+    window: { start: string; end: string };
+  },
   job: JobConfig,
   config: ReturnType<typeof loadConfig>,
   runLogger: ReturnType<typeof logger.withContext>,
   storage: ReturnType<typeof createStorageClient>
 ) {
+  const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
   const owner = job.scope?.owner ?? config.github.owner;
@@ -166,20 +180,17 @@ async function runForWindow(
   const blocklist = job.scope?.blocklist ?? config.github.blocklist;
   const includePrivate =
     job.scope?.includePrivate ?? config.github.includePrivate;
-  const windowHours = job.windowHours;
-  const windowDays = resolveWindowDays(job);
-  const windowKey = buildWindowKey(
-    windowStart,
-    windowEnd,
-    config.logging.timeZone,
-    Boolean(job.windowHours)
+  const { days: windowDays, hours: windowHours } = getWindowSize(
+    slotType,
+    window.start,
+    window.end
   );
   const reportBaseKey = buildReportBaseKey(
     config,
     job,
     ownerType,
     owner,
-    windowKey
+    slotKey
   );
   const indexBaseKey = buildIndexBaseKey(config, job, ownerType, owner);
   const manifestKey = `${reportBaseKey}/manifest.json`;
@@ -267,10 +278,7 @@ async function runForWindow(
 
     runLogger.info("context.snapshot", {
       repoCount: redacted.length,
-      ...buildContextSnapshot(
-        redacted,
-        job.contextMaxBytes ?? config.logging.contextMaxBytes
-      )
+      ...buildContextSnapshot(redacted, DEFAULT_CONTEXT_SNAPSHOT_BYTES)
     });
     runLogger.info("context.files_read", buildContextFileStats(redacted));
 
@@ -337,10 +345,8 @@ async function runForWindow(
         const outputFormat =
           template?.outputFormat ?? job.outputFormat ?? config.output.format;
         const templatePrompt = template
-          ? [config.llm.promptTemplate ?? basePrompt, template.instructions].join(
-              "\n\n"
-            )
-          : config.llm.promptTemplate ?? basePrompt;
+          ? [basePrompt, template.instructions].join("\n\n")
+          : basePrompt;
         const extension = outputFormat === "json" ? "json" : "md";
         const templateKey = `${reportBaseKey}/${template?.id ?? "default"}.${extension}`;
         const contentType =
@@ -366,7 +372,6 @@ async function runForWindow(
                 promptTemplate: templatePrompt,
                 outputFormat,
                 outputSchemaJson: config.output.schemaJson,
-                validateSchema: config.output.validateSchema,
                 maxTokensHint: job.maxTokensHint
               }),
             {
@@ -437,7 +442,7 @@ async function runForWindow(
     }
 
     if (artifacts.length === 0 && !(isEmpty && job.onEmpty === "manifest-only")) {
-      runLogger.warn("manifest.skipped", { window: windowKey });
+      runLogger.warn("manifest.skipped", { slotKey });
       return;
     }
 
@@ -446,6 +451,9 @@ async function runForWindow(
       ownerType,
       { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       redacted,
       artifacts,
       isEmpty,
@@ -464,6 +472,9 @@ async function runForWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -481,7 +492,16 @@ async function runForWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
     runLogger.info("index.latest", { key: latestKey });
@@ -493,6 +513,9 @@ async function runForWindow(
       ownerType,
       window: { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       timezone: config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       job,
       error: errorMessage
     });
@@ -507,6 +530,9 @@ async function runForWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -522,19 +548,34 @@ async function runForWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
   }
 }
 
 async function runStatsWindow(
-  window: { start: string; end: string },
+  slot: {
+    slotKey: string;
+    slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+    scheduledAt: string;
+    window: { start: string; end: string };
+  },
   job: JobConfig,
   config: ReturnType<typeof loadConfig>,
   runLogger: ReturnType<typeof logger.withContext>,
   storage: ReturnType<typeof createStorageClient>
 ) {
+  const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
   const owner = job.scope?.owner ?? config.github.owner;
@@ -543,20 +584,17 @@ async function runStatsWindow(
   const blocklist = job.scope?.blocklist ?? config.github.blocklist;
   const includePrivate =
     job.scope?.includePrivate ?? config.github.includePrivate;
-  const windowHours = job.windowHours;
-  const windowDays = resolveWindowDays(job);
-  const windowKey = buildWindowKey(
-    windowStart,
-    windowEnd,
-    config.logging.timeZone,
-    Boolean(job.windowHours)
+  const { days: windowDays, hours: windowHours } = getWindowSize(
+    slotType,
+    window.start,
+    window.end
   );
   const reportBaseKey = buildReportBaseKey(
     config,
     job,
     ownerType,
     owner,
-    windowKey
+    slotKey
   );
   const indexBaseKey = buildIndexBaseKey(config, job, ownerType, owner);
   const manifestKey = `${reportBaseKey}/manifest.json`;
@@ -702,6 +740,9 @@ async function runStatsWindow(
       ownerType,
       { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       reposForReport,
       artifacts,
       isEmpty,
@@ -720,6 +761,9 @@ async function runStatsWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -737,7 +781,16 @@ async function runStatsWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
     runLogger.info("index.latest", { key: latestKey });
@@ -749,6 +802,9 @@ async function runStatsWindow(
       ownerType,
       window: { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       timezone: config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       job,
       error: errorMessage
     });
@@ -763,6 +819,9 @@ async function runStatsWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -778,37 +837,49 @@ async function runStatsWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
   }
 }
 
 async function runAggregateWindow(
-  window: { start: string; end: string },
+  slot: {
+    slotKey: string;
+    slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+    scheduledAt: string;
+    window: { start: string; end: string };
+  },
   job: JobConfig,
   config: ReturnType<typeof loadConfig>,
   runLogger: ReturnType<typeof logger.withContext>,
   storage: ReturnType<typeof createStorageClient>
 ) {
+  const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
   const owner = job.scope?.owner ?? config.github.owner;
   const ownerType = job.scope?.ownerType ?? config.github.ownerType;
-  const windowHours = job.windowHours;
-  const windowDays = resolveWindowDays(job);
-  const windowKey = buildWindowKey(
-    windowStart,
-    windowEnd,
-    config.logging.timeZone,
-    Boolean(job.windowHours)
+  const { days: windowDays, hours: windowHours } = getWindowSize(
+    slotType,
+    window.start,
+    window.end
   );
   const reportBaseKey = buildReportBaseKey(
     config,
     job,
     ownerType,
     owner,
-    windowKey
+    slotKey
   );
   const indexBaseKey = buildIndexBaseKey(config, job, ownerType, owner);
   const manifestKey = `${reportBaseKey}/manifest.json`;
@@ -875,9 +946,7 @@ async function runAggregateWindow(
         const outputFormat =
           template?.outputFormat ?? job.outputFormat ?? config.output.format;
         const promptBase =
-          job.aggregation?.promptTemplate ??
-          config.llm.promptTemplate ??
-          aggregatePrompt;
+          job.aggregation?.promptTemplate ?? aggregatePrompt;
         const templatePrompt = template
           ? [promptBase, template.instructions].join("\n\n")
           : promptBase;
@@ -914,7 +983,6 @@ async function runAggregateWindow(
                 promptTemplate: templatePrompt,
                 outputFormat,
                 outputSchemaJson: config.output.schemaJson,
-                validateSchema: config.output.validateSchema,
                 maxTokensHint: job.maxTokensHint
               }),
             {
@@ -954,7 +1022,7 @@ async function runAggregateWindow(
     }
 
     if (artifacts.length === 0 && !(isEmpty && job.onEmpty === "manifest-only")) {
-      runLogger.warn("manifest.skipped", { window: windowKey });
+      runLogger.warn("manifest.skipped", { slotKey });
       return;
     }
 
@@ -963,6 +1031,9 @@ async function runAggregateWindow(
       ownerType,
       { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       [],
       artifacts,
       isEmpty,
@@ -981,6 +1052,9 @@ async function runAggregateWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -998,7 +1072,16 @@ async function runAggregateWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
     runLogger.info("index.latest", { key: latestKey });
@@ -1010,6 +1093,9 @@ async function runAggregateWindow(
       ownerType,
       window: { start: window.start, end: window.end, days: windowDays, hours: windowHours },
       timezone: config.logging.timeZone,
+      scheduledAt,
+      slotKey,
+      slotType,
       job,
       error: errorMessage
     });
@@ -1024,6 +1110,9 @@ async function runAggregateWindow(
       ownerType,
       periodKey,
       {
+        slotKey,
+        slotType,
+        scheduledAt,
         start: window.start,
         end: window.end,
         days: windowDays,
@@ -1039,37 +1128,25 @@ async function runAggregateWindow(
       latestKey,
       owner,
       ownerType,
-      { start: window.start, end: window.end, days: windowDays, hours: windowHours, manifestKey },
+      {
+        slotKey,
+        slotType,
+        scheduledAt,
+        start: window.start,
+        end: window.end,
+        days: windowDays,
+        hours: windowHours,
+        manifestKey
+      },
       job
     );
   }
-}
-
-function buildWindowKey(
-  start: Date,
-  end: Date,
-  timeZone?: string,
-  includeTime?: boolean
-) {
-  const format = includeTime ? formatDateTimeKey : formatDateOnly;
-  return `${format(start, timeZone)}__${format(end, timeZone)}`;
 }
 
 function formatDateOnly(value: Date, timeZone?: string) {
   if (!timeZone) return value.toISOString().slice(0, 10);
   const parts = formatDateParts(value, timeZone);
   return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function formatDateTimeKey(value: Date, timeZone?: string) {
-  if (!timeZone) {
-    const iso = value.toISOString();
-    const date = iso.slice(0, 10);
-    const time = iso.slice(11, 16).replace(":", "-");
-    return `${date}T${time}`;
-  }
-  const parts = formatDateTimeParts(value, timeZone);
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}-${parts.minute}`;
 }
 
 function formatMonthKey(value: Date, timeZone?: string) {
@@ -1092,38 +1169,16 @@ function formatDateParts(value: Date, timeZone: string) {
   return map;
 }
 
-function formatDateTimeParts(value: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
-  const parts = formatter.formatToParts(value);
-  const map = Object.fromEntries(
-    parts.map((part) => [part.type, part.value])
-  ) as {
-    year: string;
-    month: string;
-    day: string;
-    hour: string;
-    minute: string;
-  };
-  return map;
-}
 
 function buildReportBaseKey(
   config: ReturnType<typeof loadConfig>,
   job: JobConfig,
   ownerType: "user" | "org",
   owner: string,
-  windowKey: string
+  slotKey: string
 ) {
   const prefix = job.outputPrefix ?? config.output.prefix;
-  return `${prefix}/${ownerType}/${owner}/jobs/${job.id}/${windowKey}`;
+  return `${prefix}/${ownerType}/${owner}/jobs/${job.id}/${slotKey}`;
 }
 
 function buildIndexBaseKey(
@@ -1334,70 +1389,24 @@ function normalizeAuthor(
   return mapped.toLowerCase();
 }
 
-function resolveWindowDays(job: JobConfig) {
-  if (job.windowHours) {
-    return job.windowHours / 24;
+function getWindowSize(
+  slotType: "hourly" | "daily" | "weekly" | "monthly" | "yearly",
+  startIso: string,
+  endIso: string
+) {
+  if (slotType === "hourly") {
+    return { days: 0, hours: 1 };
   }
-  return job.windowDays ?? 1;
-}
-
-function buildWindows(job: JobConfig, now: Date) {
-  const windowHours = job.windowHours;
-  const windowDays = job.windowDays ?? 1;
-  const windowMs = windowHours
-    ? windowHours * 60 * 60 * 1000
-    : windowDays * 24 * 60 * 60 * 1000;
-
-  if (!job.backfillWindows && !job.backfillStart && !job.backfillEnd) {
-    const start = new Date(now.getTime() - windowMs);
-    return [
-      {
-        start: start.toISOString(),
-        end: now.toISOString()
-      }
-    ];
+  if (slotType === "daily") {
+    return { days: 1 };
   }
-
-  if (windowHours) {
-    const windows = [];
-    const count = job.backfillWindows && job.backfillWindows > 0 ? job.backfillWindows : 1;
-    let cursor = new Date(now.getTime() - windowMs * (count - 1));
-    for (let i = 0; i < count; i += 1) {
-      const next = new Date(cursor.getTime() + windowMs);
-      windows.push({ start: cursor.toISOString(), end: next.toISOString() });
-      cursor = next;
-    }
-    return windows;
+  if (slotType === "weekly") {
+    return { days: 7 };
   }
-
-  const endDate = job.backfillEnd
-    ? parseDateOnly(job.backfillEnd)
-    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const startDate = job.backfillStart
-    ? parseDateOnly(job.backfillStart)
-    : new Date(endDate.getTime());
-
-  if (job.backfillWindows && job.backfillWindows > 0) {
-    startDate.setUTCDate(endDate.getUTCDate() - (job.backfillWindows - 1) * windowDays);
-  }
-
-  const windows = [];
-  let cursor = new Date(startDate.getTime());
-  while (cursor <= endDate) {
-    const next = new Date(cursor.getTime());
-    next.setUTCDate(next.getUTCDate() + windowDays);
-    windows.push({
-      start: cursor.toISOString(),
-      end: next.toISOString()
-    });
-    cursor = next;
-  }
-  return windows;
-}
-
-function parseDateOnly(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  const days = Math.max(1, Math.round((end - start) / (24 * 60 * 60 * 1000)));
+  return { days };
 }
 
 function applyCommitBudget(

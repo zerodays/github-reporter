@@ -7,10 +7,7 @@ const truthy = new Set(["true", "1", "yes"]);
 const envSchema = z.object({
   JOBS_ENABLED: z.string().optional(),
   RUN_SCHEDULED_ONLY: z.string().optional(),
-  REPORT_WINDOW_DAYS: z.coerce.number().int().positive().optional(),
-  BACKFILL_WINDOWS: z.coerce.number().int().nonnegative().optional(),
-  BACKFILL_START: z.string().optional(),
-  BACKFILL_END: z.string().optional(),
+  BACKFILL_SLOTS: z.coerce.number().int().nonnegative().optional(),
   REPORT_TEMPLATES: z.string().optional(),
   REPORT_ON_EMPTY: z.enum(["placeholder", "manifest-only", "skip"]).optional(),
   INCLUDE_INACTIVE_REPOS: z.string().optional(),
@@ -33,10 +30,12 @@ const jobScopeSchema = z.object({
 });
 
 const scheduleSchema = z.object({
-  type: z.enum(["hourly", "daily", "weekly"]),
+  type: z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]),
   minute: z.coerce.number().int().min(0).max(59).optional(),
   hour: z.coerce.number().int().min(0).max(23).optional(),
-  weekday: z.coerce.number().int().min(0).max(6).optional()
+  weekday: z.coerce.number().int().min(0).max(6).optional(),
+  dayOfMonth: z.coerce.number().int().min(1).max(31).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional()
 });
 
 const jobSchema = z
@@ -46,23 +45,18 @@ const jobSchema = z
     description: z.string().optional(),
     mode: z.enum(["pipeline", "aggregate", "stats"]).default("pipeline"),
     jobVersion: z.string().optional(),
-    windowDays: z.coerce.number().int().positive().optional(),
-    windowHours: z.coerce.number().int().positive().optional(),
-  templates: z.array(z.string()).default([]),
-  outputFormat: z.enum(["markdown", "json"]).optional(),
-  onEmpty: z.enum(["placeholder", "manifest-only", "skip"]).default("manifest-only"),
-  includeInactiveRepos: z.boolean().default(false),
-  maxCommitsPerRepo: z.coerce.number().int().positive().optional(),
-  maxRepos: z.coerce.number().int().positive().optional(),
-  maxTotalCommits: z.coerce.number().int().positive().optional(),
-  maxTokensHint: z.coerce.number().int().positive().optional(),
-  idempotentKey: z.string().optional(),
-  backfillWindows: z.coerce.number().int().nonnegative().default(0),
-  backfillStart: z.string().optional(),
-  backfillEnd: z.string().optional(),
+    templates: z.array(z.string()).default([]),
+    outputFormat: z.enum(["markdown", "json"]).optional(),
+    onEmpty: z.enum(["placeholder", "manifest-only", "skip"]).default("manifest-only"),
+    includeInactiveRepos: z.boolean().default(false),
+    maxCommitsPerRepo: z.coerce.number().int().positive().optional(),
+    maxRepos: z.coerce.number().int().positive().optional(),
+    maxTotalCommits: z.coerce.number().int().positive().optional(),
+    maxTokensHint: z.coerce.number().int().positive().optional(),
+    idempotentKey: z.string().optional(),
+    backfillSlots: z.coerce.number().int().nonnegative().default(0),
     outputPrefix: z.string().optional(),
     contextProviders: z.array(z.string()).optional(),
-    contextMaxBytes: z.coerce.number().int().positive().optional(),
     redactPaths: z.array(z.string()).optional(),
     schedule: scheduleSchema.optional(),
     scope: jobScopeSchema.optional(),
@@ -77,8 +71,8 @@ const jobSchema = z
       })
       .optional()
   })
-  .refine((job) => job.windowDays || job.windowHours, {
-    message: "Job must define windowDays or windowHours."
+  .refine((job) => job.schedule, {
+    message: "Job must define a schedule."
   });
 
 const jobsFileSchema = z.object({
@@ -122,16 +116,13 @@ function applyEnvOverridesToJob(job: JobConfig, env: z.infer<typeof envSchema>) 
       env.INCLUDE_INACTIVE_REPOS,
       job.includeInactiveRepos
     ),
-    windowDays: env.REPORT_WINDOW_DAYS ?? job.windowDays,
     maxCommitsPerRepo: env.MAX_COMMITS_PER_REPO ?? job.maxCommitsPerRepo,
     maxRepos: env.MAX_REPOS ?? job.maxRepos,
     maxTotalCommits: env.MAX_TOTAL_COMMITS ?? job.maxTotalCommits,
     maxTokensHint: env.MAX_TOKENS_HINT ?? job.maxTokensHint,
     idempotentKey: env.REPORT_IDEMPOTENT_KEY ?? job.idempotentKey,
     templates,
-    backfillWindows: env.BACKFILL_WINDOWS ?? job.backfillWindows,
-    backfillStart: normalizeDateValue(env.BACKFILL_START ?? job.backfillStart),
-    backfillEnd: normalizeDateValue(env.BACKFILL_END ?? job.backfillEnd),
+    backfillSlots: env.BACKFILL_SLOTS ?? job.backfillSlots,
     onEmpty: env.REPORT_ON_EMPTY ?? job.onEmpty
   };
 }
@@ -147,10 +138,4 @@ function resolveList(value: string | undefined, fallback: string[]) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function normalizeDateValue(value: string | undefined) {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
 }
