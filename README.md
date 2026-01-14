@@ -114,7 +114,12 @@ Validated payloads include the `x-signature` header for security.
 
 ## 📊 Viewer
 
-An example viewer app is provided in `examples/viewer`. It is a Next.js application that provides a beautiful calendar-based interface for browsing your reports. It reads directly from your storage (Local or S3/R2) via a secure proxy.
+An example viewer app is provided in `viewer`. It is a Next.js application that provides a beautiful calendar-based interface for browsing your reports. It reads directly from your storage (Local or S3/R2) via a secure proxy.
+
+Run it with:
+```bash
+pnpm viewer:dev
+```
 
 ## 🛰 Deployment (Railway)
 
