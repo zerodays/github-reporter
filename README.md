@@ -84,6 +84,34 @@ Artifacts are stored in a predictable, flat structure designed for high-performa
   - `latest.json` — Pointer to the most recent run.
   - `{YYYY-MM}.json` — Monthly index of all runs for timeline rendering.
 
+## 🛰 Slack & Webhooks
+
+GitHub Reporter supports real-time notifications via standard webhooks or a rich Slack integration.
+
+### Slack Integration (Recommended)
+Reports are uploaded as **searchable snippets** using the Slack Files API, bypassing standard message character limits.
+
+1.  **Create a Slack App**: Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app.
+2.  **Add Scopes**: Under **OAuth & Permissions**, add the `files:write` bot token scope.
+3.  **Install App**: Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-...`).
+4.  **Add App to Channel**: Invite your bot to the desired Slack channel (`/invite @your_bot_name`).
+5.  **Get Channel ID**: Right-click the channel name in Slack > View channel details > Copy Channel ID at the bottom.
+6.  **Configure**:
+    ```bash
+    # .env
+    SLACK_TOKEN=xoxb-your-token
+    SLACK_CHANNEL=C12345678
+    ```
+    Or per-job in `jobs.config.ts`.
+
+### Standard Webhooks
+For Discord, custom APIs, or automation tools:
+```bash
+WEBHOOK_URL=https://your-webhook.com
+WEBHOOK_SECRET=your-hmac-secret # Optional
+```
+Validated payloads include the `x-signature` header for security.
+
 ## 📊 Viewer
 
 An example viewer app is provided in `examples/viewer`. It is a Next.js application that provides a beautiful calendar-based interface for browsing your reports. It reads directly from your storage (Local or S3/R2) via a secure proxy.

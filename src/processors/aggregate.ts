@@ -1,5 +1,6 @@
 import { generateAggregateReport, aggregatePrompt } from "../generator.js";
 import { withRetry } from "../retry.js";
+import { sendWebhook } from "../webhook.js";
 import {
   buildFailedManifest,
   buildManifest,
@@ -164,6 +165,26 @@ export async function runAggregateWindow(
       const extension = outputFormat === "json" ? "json" : "md";
       const stored = await storage.put(`${reportBaseKey}/output.${extension}`, reportText, contentType);
       output = { format: outputFormat, stored };
+
+      // 4b. Webhook
+      const webhookConfig = job.webhook ?? config.webhook;
+      if (webhookConfig.url || (webhookConfig.token && webhookConfig.channel)) {
+        const payload = {
+          owner,
+          ownerType,
+          jobId: job.id,
+          jobName: job.name,
+          window,
+          artifact: stored,
+          format: outputFormat,
+          createdAt: new Date().toISOString()
+        };
+        runLogger.info("webhook.send.start");
+        await withRetry(() => sendWebhook(webhookConfig, payload, reportText), {
+          retries: config.network.retryCount,
+          backoffMs: config.network.retryBackoffMs
+        });
+      }
     }
 
     // 5. Manifest & Indexing

@@ -39,6 +39,7 @@ graph TD
     K --> L
     
     L --> M["Manifest & Indexing"]
+    L --> N["Webhook / Slack Notification"]
 ```
 
 ---
@@ -102,3 +103,16 @@ The Viewer (Next.js) is a "dumb" frontend. It does not have a database.
 3. It fetches individual **Manifests** and **Outputs** when a user clicks a specific run.
 
 This architecture allows the Viewer to be extremely lightweight and secure, as it only requires read-access to the storage carrier.
+
+---
+
+## Webhooks & Notifications
+
+The system supports automated notifications via `src/webhook.ts`. This happens immediately after a report is successfully stored.
+
+### Dual-Mode Logic
+1.  **Standard Webhook**: Sends a JSON payload containing metadata and the artifact URI. Supports HMAC signatures for security.
+2.  **Slack Integration**: Optimized for long-form reports. Instead of sending a message (which Slack limits to 3000 chars), it uses the **Files API** to upload the report as a "Snippet."
+    - **Searchable**: Snippets are indexed by Slack.
+    - **Collapsible**: Prevents channel clutter while keeping technical details accessible.
+    - **Bypasses Limits**: Essential for large weekly or monthly aggregated reports.

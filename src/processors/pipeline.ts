@@ -250,9 +250,9 @@ export async function runPipelineWindow(
       };
       
       const webhookConfig = job.webhook ?? config.webhook;
-      if (webhookConfig.url) {
+      if (webhookConfig.url || (webhookConfig.token && webhookConfig.channel)) {
         runLogger.info("webhook.send.start");
-        await withRetry(() => sendWebhook(webhookConfig, payload), {
+        await withRetry(() => sendWebhook(webhookConfig, payload, reportText), {
           retries: config.network.retryCount,
           backoffMs: config.network.retryBackoffMs
         });
