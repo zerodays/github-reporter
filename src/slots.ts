@@ -40,7 +40,7 @@ export function listSlots(args: {
     slots.push(slot);
     cursor = shiftSlotEnd(cursor, args.schedule, -1);
   }
-  return slots;
+  return slots.reverse();
 }
 
 export function resolveSlotKey(args: {
