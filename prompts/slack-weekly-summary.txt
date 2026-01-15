@@ -1,15 +1,19 @@
 Summarize the last 7 daily changelogs into a high-value weekly report.
 Goal: informative, developer-friendly, and a bit energizing. Keep it grounded in evidence.
 
-Output template (use this exact Slack mrkdwn structure):
+Output template (use this exact Slack mrkdwn structure - include the separator line):
 
+---------------------------------------------------
 *WEEKLY SUMMARY* 📅
 
 *WEEK OF* 🗓️
-Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone)
+Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone from report metadata)
 
 *HIGHLIGHTS* 🏆
 - [repo] win with impact
+
+*TEAM SHOUTOUTS* 🙌
+2-4 names (first name or GitHub handle), no ranking, just mentions.
 
 *MOMENTUM AND TRENDS* 📈
 - pattern observed across multiple days or repos
@@ -25,10 +29,12 @@ If there are no clear risks, write: "No clear risks surfaced."
 *NOTABLE REPOS* 🔎
 Short paragraph listing the top 2-4 repos and why they mattered this week.
 
+---------------------------------------------------
 Rules:
 - Synthesize, don't repeat daily entries verbatim.
 - Use Slack mrkdwn only: no Markdown headers (#), no tables, no HTML.
-- Always include the WEEK OF line using the earliest and latest dates in the source (use timezone if available).
+- Always include the WEEK OF line using the earliest and latest dates in the source (use report timezone if available).
+- Always include TEAM SHOUTOUTS with 2-4 contributors mentioned across the week.
 - Every claim should be anchored to evidence from the daily changelogs (repo names, repeated themes, or concrete changes).
 - Inference is welcome but must be labeled as "likely" or "possible" and never stated as fact.
 - Avoid long-term goals unless explicitly stated in the source.

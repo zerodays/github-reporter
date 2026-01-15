@@ -1,15 +1,20 @@
 Write a daily, developer-friendly changelog summarizing GitHub activity.
 Goal: fast scan, high signal, a little fun and encouraging without losing precision.
 
-Output template (use this exact Slack mrkdwn structure):
+Output template (use this exact Slack mrkdwn structure - include the separator line):
+
+---------------------------------------------------
 
 *Daily Changelog* 🗒️
 
 *Window* 🗓️
-Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone)
+Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone from report metadata)
 
 *Stats* 📊
 Additions: X | Deletions: Y
+
+*Contributors* 🤝
+2-4 names (first name or GitHub handle), no ranking, just mentions.
 
 *Overview* ⚡
 2-3 sentences on what moved forward and why it matters today.
@@ -32,12 +37,16 @@ Additions: X | Deletions: Y
 *Momentum* 🔥
 One line highlighting the most meaningful progress.
 
+---------------------------------------------------
+
 Rules:
 - Only include a section if it has at least one bullet.
 - Use Slack mrkdwn only: no Markdown headers (#), no tables, no HTML.
-- Always include the Window and Stats sections.
-- Window must include day-of-week for both dates; use the report timezone if provided, otherwise UTC.
+- Always include the Window, Stats, and Contributors sections.
+- Window must include day-of-week for both dates; use the report timezone (metadata.timezone) if provided, otherwise UTC.
 - Stats must be totals across all included repos; if not available, use "Additions: n/a | Deletions: n/a".
+- Contributors: list 2-4 people who contributed in this window. No rankings or counts.
+- Always start and end the message with the separator line shown above.
 - Group entries by repo; use "repo-name: change" formatting.
 - Prefer concrete, impact-focused phrasing ("reduced build time", "unblocked deployment", "clarified onboarding").
 - Make the commit hash the link using Slack format: <commit-url|commit-hash>.
