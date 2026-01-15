@@ -39,7 +39,7 @@ import type { JobsConfig } from "./src/jobs";
 export const jobs: JobsConfig = {
   jobs: [
     {
-      id: "daily-changelog",
+      id: "slack-daily-changelog",
       name: "Daily Changelog",
       mode: "pipeline",
       dataProfile: "full",
@@ -57,17 +57,17 @@ export const jobs: JobsConfig = {
       scope: { owner: "my-org" }
     },
     {
-      id: "weekly-summary",
+      id: "slack-weekly-summary",
       name: "Weekly Summary",
       mode: "aggregate",
       dataProfile: "minimal",
       schedule: { type: "weekly", weekday: 1, hour: 9 },
       scope: { owner: "my-org" },
       aggregation: {
-        sourceJobId: "daily-changelog",  // No more sourceTemplateId needed!
+        sourceJobId: "slack-daily-changelog",  // No more sourceTemplateId needed!
         maxDays: 7
       },
-      promptFile: "./prompts/weekly-summary.txt",
+      promptFile: "./prompts/slack-weekly-summary.txt",
       outputFormat: "markdown"
     }
   ]
@@ -456,10 +456,10 @@ The entire template registry system will be removed since prompts are now inline
 ├── config.defaults.ts   # Platform defaults (storage, logging, etc.)
 ├── .env                 # Secrets only
 ├── prompts/             # Example prompts (users copy and customize)
-│   ├── changelog.txt
+│   ├── slack-daily-changelog.txt
 │   ├── dev-diary.txt
 │   ├── twitter.txt
-│   └── weekly-summary.txt
+│   └── slack-weekly-summary.txt
 ├── src/
 │   ├── index.ts         # Entrypoint
 │   ├── scheduler.ts     # Cron/schedule logic (minimal changes)

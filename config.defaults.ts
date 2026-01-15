@@ -2,8 +2,8 @@ import type { ConfigFile } from "./src/config.ts";
 
 export const defaultConfig: ConfigFile = {
   github: {
-    owner: "vucinatim",
-    ownerType: "user",
+    owner: "zerodays",
+    ownerType: "org",
     perPage: 100,
     maxPages: 5,
     includePrivate: true,
@@ -19,7 +19,8 @@ export const defaultConfig: ConfigFile = {
     type: "s3",
     bucket: "github-reporter",
     region: "auto",
-    endpoint: "https://c45f3cd61fcad1e24e5e14401f258723.r2.cloudflarestorage.com",
+    endpoint:
+      "https://40d3f89c67347f96408cfa1ff6ec4f11.r2.cloudflarestorage.com",
     forcePathStyle: true,
   },
   network: {

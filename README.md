@@ -30,7 +30,7 @@ Typical uses:
    ```
    Run a single job by id:
    ```bash
-   pnpm dev -- --job daily-changelog
+   pnpm dev -- --job slack-daily-changelog
    ```
 
    > [!TIP]
@@ -56,8 +56,8 @@ export default {
       promptFile: "prompts/dev-diary.txt",
     },
     {
-      id: "weekly-summary",
-      name: "Weekly Summary",
+      id: "slack-weekly-summary",
+      name: "Slack Weekly Summary",
       mode: "aggregate",
       scope: { owner: "vucinatim", ownerType: "user" },
       schedule: { type: "weekly", weekday: 0 },
@@ -65,7 +65,7 @@ export default {
         sourceJobId: "daily-diary",
         maxDays: 7
       },
-      promptFile: "prompts/weekly-summary.txt",
+      promptFile: "prompts/slack-weekly-summary.txt",
     }
   ]
 } satisfies JobsConfig;

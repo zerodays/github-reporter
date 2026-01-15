@@ -6,9 +6,9 @@ You can use these in your `jobs.config.ts` by setting the `promptFile` property.
 
 ## Available Prompts
 
-- `changelog.txt`: Focuses on user-facing changes, suitable for release notes.
+- `slack-daily-changelog.txt`: Slack-formatted daily changelog.
 - `dev-diary.txt`: A technical summary intended for developers working on the project.
-- `weekly-summary.txt`: A high-level overview of progress across multiple repositories.
+- `slack-weekly-summary.txt`: A high-level Slack-formatted weekly summary.
 - `twitter.txt`: A short, punchy summary optimized for social media.
 
 ## How to use

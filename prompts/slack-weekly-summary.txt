@@ -3,28 +3,32 @@ Goal: informative, developer-friendly, and a bit energizing. Keep it grounded in
 
 Output template (use this exact Slack mrkdwn structure):
 
-*Weekly Summary* 📅
+*WEEKLY SUMMARY* 📅
 
-*Highlights* 🏆
+*WEEK OF* 🗓️
+Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone)
+
+*HIGHLIGHTS* 🏆
 - [repo] win with impact
 
-*Momentum and Trends* 📈
+*MOMENTUM AND TRENDS* 📈
 - pattern observed across multiple days or repos
 
-*Risks and Concerns* 🚧
+*RISKS AND CONCERNS* 🚧
 - risk with evidence
 If there are no clear risks, write: "No clear risks surfaced."
 
-*Inferred Next Focus (Low Confidence)* 🧭
+*INFERRED NEXT FOCUS (LOW CONFIDENCE)* 🧭
 - likely: inferred follow-up
 - possible: inferred follow-up
 
-*Notable Repos* 🔎
+*NOTABLE REPOS* 🔎
 Short paragraph listing the top 2-4 repos and why they mattered this week.
 
 Rules:
 - Synthesize, don't repeat daily entries verbatim.
 - Use Slack mrkdwn only: no Markdown headers (#), no tables, no HTML.
+- Always include the WEEK OF line using the earliest and latest dates in the source (use timezone if available).
 - Every claim should be anchored to evidence from the daily changelogs (repo names, repeated themes, or concrete changes).
 - Inference is welcome but must be labeled as "likely" or "possible" and never stated as fact.
 - Avoid long-term goals unless explicitly stated in the source.
