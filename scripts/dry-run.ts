@@ -38,7 +38,10 @@ function parseArgs(argv: string[]) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const config = loadConfig();
-  const jobs = await loadJobs();
+  const jobs = await loadJobs("jobs.config.ts", {
+    owner: config.github.owner,
+    ownerType: config.github.ownerType
+  });
   const job = selectJob(jobs, args.jobId);
 
   if (job.mode !== "pipeline") {

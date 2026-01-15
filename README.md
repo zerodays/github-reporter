@@ -10,7 +10,7 @@ Typical uses:
 
 ## Core Concepts
 
-- **GitOps Config**: All jobs, schedules, and scopes are defined in `jobs.config.ts`. Environment variables are reserved for secrets (`GITHUB_TOKEN`, `GEMINI_API_KEY`, etc.).
+- **GitOps Config**: All jobs, schedules, and scopes are defined in `jobs.config.ts`. Environment variables are for secrets and deployment defaults (e.g. `GITHUB_TOKEN`, `GEMINI_API_KEY`, `GITHUB_OWNER`).
 - **One Job = One Output**: Each job generates exactly one primary artifact (Markdown or JSON). This simplifies storage, logic, and rendering.
 - **Data Profiles**: Control exactly how much context is fetched from GitHub to optimize for token usage and performance.
 - **Aggregation**: Summarize a sequence of existing reports (e.g., Weekly Summary from 7 Daily Reports) without re-scraping GitHub.
@@ -22,8 +22,8 @@ Typical uses:
    pnpm install
    cp .env.example .env
    ```
-2. **Configure Secrets**: Add your `GITHUB_TOKEN` and `GEMINI_API_KEY` to `.env`.
-3. **Define Jobs**: Edit `jobs.config.ts` to set your owner scope and schedules.
+2. **Configure Env**: Add `GITHUB_TOKEN` and `GEMINI_API_KEY` to `.env`. Set `GITHUB_OWNER`/`GITHUB_OWNER_TYPE` if you want a default owner for all jobs.
+3. **Define Jobs**: Edit `jobs.config.ts` to set schedules, prompts, and any scope filters you need.
 4. **Run**:
    ```bash
    pnpm dev
@@ -35,6 +35,38 @@ Typical uses:
 
    > [!TIP]
    > Need help getting your tokens? Check out our [Token Setup Guide](docs/SETUP_TOKENS.md) for step-by-step instructions on creating GitHub and Slack credentials.
+
+## 🔐 Environment Variables
+
+Use `.env` for secrets and deployment-specific settings. `jobs.config.ts` remains the single source of truth for job logic.
+
+Required:
+- `GITHUB_TOKEN`
+- `GEMINI_API_KEY`
+
+Owner:
+- `GITHUB_OWNER`
+- `GITHUB_OWNER_TYPE`
+
+Storage (S3/R2):
+- `BUCKET_NAME`
+- `BUCKET_ENDPOINT`
+- `BUCKET_ACCESS_KEY_ID`
+- `BUCKET_SECRET_ACCESS_KEY`
+
+Notifications:
+- `SLACK_TOKEN`
+- `SLACK_CHANNEL`
+- `SLACK_DELIVERY`
+- `WEBHOOK_URL`
+- `WEBHOOK_SECRET`
+
+Deployment overrides:
+- `TIMEZONE`
+- `LOG_LEVEL`
+- `LOG_FORMAT`
+
+See `.env.example` for the full list and comments.
 
 ## 🛠 Configuration (`jobs.config.ts`)
 
@@ -50,7 +82,7 @@ export default {
       id: "daily-diary",
       name: "Daily Developer Diary",
       mode: "pipeline",
-      scope: { owner: "vucinatim", ownerType: "user" },
+      scope: { blocklist: ["github-reporter"] },
       schedule: { type: "daily", hour: 0 },
       dataProfile: "standard",
       promptFile: "prompts/dev-diary.txt",
@@ -59,7 +91,7 @@ export default {
       id: "slack-weekly-summary",
       name: "Slack Weekly Summary",
       mode: "aggregate",
-      scope: { owner: "vucinatim", ownerType: "user" },
+      scope: {},
       schedule: { type: "weekly", weekday: 0 },
       aggregation: {
         sourceJobId: "daily-diary",

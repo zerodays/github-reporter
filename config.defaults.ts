@@ -2,61 +2,58 @@ import type { ConfigFile } from "./src/config.ts";
 
 export const defaultConfig: ConfigFile = {
   github: {
-    owner: "zerodays",
-    ownerType: "org",
-    perPage: 100,
-    maxPages: 5,
-    includePrivate: true,
+    ownerType: "org", // "org" or "user" - determines API endpoint for listing repos
+    perPage: 100, // Items per page in GitHub API pagination
+    maxPages: 5, // Maximum pages to fetch (limits total repos)
+    includePrivate: true, // Include private repositories in listings
   },
   output: {
-    format: "markdown",
-    prefix: "reports",
+    format: "markdown", // Output format: "markdown" or "json"
+    prefix: "reports", // Storage path prefix for all reports
   },
   llm: {
-    model: "gemini-3-flash-preview",
+    model: "gemini-3-flash-preview", // LLM model identifier for report generation
   },
   storage: {
-    type: "s3",
-    bucket: "github-reporter",
-    region: "auto",
-    endpoint:
-      "https://40d3f89c67347f96408cfa1ff6ec4f11.r2.cloudflarestorage.com",
-    forcePathStyle: true,
+    type: "s3", // Storage backend type (e.g., "s3", "local")
+    bucket: "github-reporter", // Bucket/container name
+    region: "auto", // AWS region ("auto" = auto-detect)
+    forcePathStyle: true, // Use path-style URLs (needed for S3-compatible services)
   },
   network: {
-    retryCount: 2,
-    retryBackoffMs: 500,
+    retryCount: 2, // Number of retry attempts for failed network requests
+    retryBackoffMs: 500, // Delay in milliseconds between retries
   },
   logging: {
-    level: "info",
-    includeTimings: true,
-    format: "pretty",
-    color: true,
+    level: "info", // Log level: "debug", "info", "warn", "error"
+    includeTimings: true, // Include execution time in log entries
+    format: "pretty", // Log format: "pretty" (human-readable) or "json"
+    color: true, // Enable colored output in terminal logs
   },
-  timeZone: "Europe/Ljubljana",
-  webhook: {},
+  webhook: {}, // Webhook notification settings
   context: {
-    includeReadme: true,
-    includeLlmTxt: true,
-    llmFiles: ["llms.txt", "llm.txt"],
-    includeRepoDescription: true,
-    includeRepoTopics: true,
-    includeDiffSummary: true,
-    includeDiffSnippets: true,
-    includePullRequests: true,
-    includePullRequestDetails: true,
-    includeIssues: true,
-    maxReadmeBytes: 36000,
-    maxLlmTxtBytes: 24000,
-    maxDiffFilesPerCommit: 60,
-    maxDiffCommitsPerRepo: 30,
-    maxSnippetCommitsPerRepo: 15,
-    maxSnippetFilesPerCommit: 15,
-    maxSnippetLinesPerFile: 200,
-    maxSnippetBytesPerRepo: 60000,
-    maxPullRequestsPerRepo: 60,
-    maxIssuesPerRepo: 60,
+    includeReadme: true, // Fetch and include README files in context
+    includeLlmTxt: true, // Fetch and include llm.txt/llms.txt files
+    llmFiles: ["llms.txt", "llm.txt"], // Filenames to look for LLM context
+    includeRepoDescription: true, // Include repository description
+    includeRepoTopics: true, // Include repository topics/tags
+    includeDiffSummary: true, // Include summary statistics of code changes
+    includeDiffSnippets: true, // Include actual code snippets from diffs
+    includePullRequests: true, // Fetch and include PR information
+    includePullRequestDetails: true, // Include full PR details (not just counts)
+    includeIssues: true, // Fetch and include issue information
+    maxReadmeBytes: 36000, // Maximum README size to include (in bytes)
+    maxLlmTxtBytes: 24000, // Maximum llm.txt size to include (in bytes)
+    maxDiffFilesPerCommit: 60, // Maximum files to process per commit
+    maxDiffCommitsPerRepo: 30, // Maximum commits to analyze per repo
+    maxSnippetCommitsPerRepo: 15, // Maximum commits to extract snippets from
+    maxSnippetFilesPerCommit: 15, // Maximum files to extract snippets from per commit
+    maxSnippetLinesPerFile: 200, // Maximum lines per code snippet
+    maxSnippetBytesPerRepo: 60000, // Maximum total snippet size per repo (in bytes)
+    maxPullRequestsPerRepo: 60, // Maximum PRs to fetch per repository
+    maxIssuesPerRepo: 60, // Maximum issues to fetch per repository
     ignoreExtensions: [
+      // File extensions to skip when processing diffs
       ".lock",
       ".min.js",
       ".min.css",

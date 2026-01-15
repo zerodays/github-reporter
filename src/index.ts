@@ -52,7 +52,10 @@ async function main() {
   await validateStorage(config.storage);
   baseLogger.info("storage.validate.done", describeStorage(config.storage));
 
-  const jobs = await loadJobs();
+  const jobs = await loadJobs("jobs.config.ts", {
+    owner: config.github.owner,
+    ownerType: config.github.ownerType
+  });
   const selectedJobs = args.jobId
     ? jobs.filter((job) => job.id === args.jobId)
     : jobs;

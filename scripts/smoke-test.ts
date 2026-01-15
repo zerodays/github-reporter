@@ -23,7 +23,10 @@ async function main() {
   await runHealthCheck(config);
 
   const schedulerConfig = loadSchedulerConfig();
-  const jobs = await loadJobs();
+  const jobs = await loadJobs("jobs.config.ts", {
+    owner: config.github.owner,
+    ownerType: config.github.ownerType
+  });
   const storage = createStorageClient(config.storage);
 
   baseLogger.info("smoke.jobs", {

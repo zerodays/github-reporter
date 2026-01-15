@@ -29,6 +29,8 @@ const scopeSchema = z.object({
   authorAliases: z.record(z.string()).optional()
 });
 
+const scopeFileSchema = scopeSchema.partial({ owner: true });
+
 // =============================================================================
 // WEBHOOK SCHEMA (Per-job, falls back to global)
 // =============================================================================
@@ -58,63 +60,65 @@ const aggregationSchema = z.object({
 // JOB SCHEMA (One job = One output)
 // =============================================================================
 
+const jobBaseShape = {
+  // Identity
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  version: z.string().optional(),
+
+  // Mode: determines processing logic
+  mode: z.enum(["pipeline", "aggregate", "stats"]).default("pipeline"),
+
+  // Scheduling
+  schedule: scheduleSchema,
+
+  // Scope: what data to fetch (per-job, no global)
+  scope: scopeSchema,
+
+  // Data profile: how much data to fetch
+  dataProfile: z.enum(["minimal", "standard", "full"]).optional(),
+
+  // Processing (for pipeline/aggregate modes)
+  prompt: z.string().optional(),
+  promptFile: z.string().optional(),
+  outputFormat: z.enum(["markdown", "json"]).default("markdown"),
+
+  // Aggregation (for aggregate mode only)
+  aggregation: aggregationSchema.optional(),
+
+  // Output behavior
+  onEmpty: z.enum(["placeholder", "manifest-only", "skip"]).default("manifest-only"),
+  backfillSlots: z.number().int().nonnegative().default(0),
+  outputPrefix: z.string().optional(),
+  idempotentKey: z.boolean().optional().default(false),
+
+  // Data Processing
+  contextProviders: z.array(z.string()).optional(),
+  redactPaths: z.array(z.string()).optional(),
+
+  // Limits
+  maxCommitsPerRepo: z.number().int().positive().optional(),
+  maxRepos: z.number().int().positive().optional(),
+  maxTotalCommits: z.number().int().positive().optional(),
+  maxTokensHint: z.number().int().positive().optional(),
+  includeInactiveRepos: z.boolean().optional().default(false),
+
+  // Metrics
+  metrics: z
+    .object({
+      topContributors: z.number().int().positive().optional(),
+      topRepos: z.number().int().positive().optional()
+    })
+    .optional(),
+  metricsOnly: z.boolean().optional(),
+
+  // Per-job webhook (optional, falls back to global config)
+  webhook: webhookSchema.optional()
+};
+
 const jobSchema = z
-  .object({
-    // Identity
-    id: z.string().min(1),
-    name: z.string().min(1),
-    description: z.string().optional(),
-    version: z.string().optional(),
-
-    // Mode: determines processing logic
-    mode: z.enum(["pipeline", "aggregate", "stats"]).default("pipeline"),
-
-    // Scheduling
-    schedule: scheduleSchema,
-
-    // Scope: what data to fetch (per-job, no global)
-    scope: scopeSchema,
-
-    // Data profile: how much data to fetch
-    dataProfile: z.enum(["minimal", "standard", "full"]).optional(),
-
-    // Processing (for pipeline/aggregate modes)
-    prompt: z.string().optional(),
-    promptFile: z.string().optional(),
-    outputFormat: z.enum(["markdown", "json"]).default("markdown"),
-
-    // Aggregation (for aggregate mode only)
-    aggregation: aggregationSchema.optional(),
-
-    // Output behavior
-    onEmpty: z.enum(["placeholder", "manifest-only", "skip"]).default("manifest-only"),
-    backfillSlots: z.number().int().nonnegative().default(0),
-    outputPrefix: z.string().optional(),
-    idempotentKey: z.boolean().optional().default(false),
-
-    // Data Processing
-    contextProviders: z.array(z.string()).optional(),
-    redactPaths: z.array(z.string()).optional(),
-
-    // Limits
-    maxCommitsPerRepo: z.number().int().positive().optional(),
-    maxRepos: z.number().int().positive().optional(),
-    maxTotalCommits: z.number().int().positive().optional(),
-    maxTokensHint: z.number().int().positive().optional(),
-    includeInactiveRepos: z.boolean().optional().default(false),
-
-    // Metrics
-    metrics: z
-      .object({
-        topContributors: z.number().int().positive().optional(),
-        topRepos: z.number().int().positive().optional()
-      })
-      .optional(),
-    metricsOnly: z.boolean().optional(),
-
-    // Per-job webhook (optional, falls back to global config)
-    webhook: webhookSchema.optional()
-  })
+  .object(jobBaseShape)
   .refine(
     (job) => {
       // Aggregate mode requires aggregation config
@@ -136,12 +140,40 @@ const jobSchema = z
     { message: "Pipeline mode requires prompt or promptFile" }
   );
 
+const jobFileSchema = z
+  .object({
+    ...jobBaseShape,
+    scope: scopeFileSchema
+  })
+  .refine(
+    (job) => {
+      if (job.mode === "aggregate" && !job.aggregation) {
+        return false;
+      }
+      return true;
+    },
+    { message: "Aggregate mode requires aggregation config" }
+  )
+  .refine(
+    (job) => {
+      if (job.mode === "pipeline" && !job.prompt && !job.promptFile) {
+        return false;
+      }
+      return true;
+    },
+    { message: "Pipeline mode requires prompt or promptFile" }
+  );
+
 // =============================================================================
 // JOBS CONFIG FILE SCHEMA
 // =============================================================================
 
 const jobsConfigSchema = z.object({
   jobs: z.array(jobSchema).min(1)
+});
+
+const jobsConfigFileSchema = z.object({
+  jobs: z.array(jobFileSchema).min(1)
 });
 
 // =============================================================================
@@ -153,7 +185,12 @@ export type Scope = z.infer<typeof scopeSchema>;
 export type Webhook = z.infer<typeof webhookSchema>;
 export type Aggregation = z.infer<typeof aggregationSchema>;
 export type JobConfig = z.infer<typeof jobSchema>;
-export type JobsConfig = z.input<typeof jobsConfigSchema>;
+export type JobsConfig = z.input<typeof jobsConfigFileSchema>;
+
+type JobScopeDefaults = {
+  owner?: string;
+  ownerType?: "user" | "org";
+};
 
 // =============================================================================
 // SCHEMA EXPORTS (for validation)
@@ -165,7 +202,8 @@ export {
   webhookSchema,
   aggregationSchema,
   jobSchema,
-  jobsConfigSchema
+  jobsConfigSchema,
+  jobsConfigFileSchema
 };
 
 // =============================================================================
@@ -200,7 +238,10 @@ export function loadPrompt(job: JobConfig, configDir: string): string | undefine
   }
   return undefined;
 }
-export async function loadJobs(configPath: string = "jobs.config.ts"): Promise<JobConfig[]> {
+export async function loadJobs(
+  configPath: string = "jobs.config.ts",
+  defaults?: JobScopeDefaults
+): Promise<JobConfig[]> {
   const absolutePath = resolve(process.cwd(), configPath);
   try {
     // Basic check for existence
@@ -210,7 +251,9 @@ export async function loadJobs(configPath: string = "jobs.config.ts"): Promise<J
     
     // Use dynamic import for ESM compatibility
     const config = await import(`file://${absolutePath}`);
-    const parsed = jobsConfigSchema.parse(config.config || config.default || config);
+    const rawConfig = config.config || config.default || config;
+    const resolvedConfig = applyJobScopeDefaults(rawConfig, defaults);
+    const parsed = jobsConfigSchema.parse(resolvedConfig);
     return parsed.jobs;
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -223,5 +266,49 @@ export async function loadJobs(configPath: string = "jobs.config.ts"): Promise<J
 export function loadSchedulerConfig() {
   return {
     runScheduledOnly: process.argv.includes("--scheduled-only") || process.env.SCHEDULED_ONLY === "true"
+  };
+}
+
+function applyJobScopeDefaults(rawConfig: unknown, defaults?: JobScopeDefaults) {
+  if (!defaults) return rawConfig;
+  const ownerDefault = defaults.owner?.trim();
+  const ownerTypeDefault = defaults.ownerType;
+  if (!ownerDefault && !ownerTypeDefault) return rawConfig;
+
+  if (!rawConfig || typeof rawConfig !== "object") return rawConfig;
+  const config = rawConfig as { jobs?: unknown };
+  if (!Array.isArray(config.jobs)) return rawConfig;
+
+  return {
+    ...config,
+    jobs: config.jobs.map((job) => {
+      if (!job || typeof job !== "object") return job;
+      const jobObj = job as { scope?: Record<string, unknown> };
+      const scope =
+        jobObj.scope && typeof jobObj.scope === "object" ? jobObj.scope : {};
+      const scopeOwnerRaw = (scope as { owner?: unknown }).owner;
+      const scopeOwner =
+        typeof scopeOwnerRaw === "string" ? scopeOwnerRaw.trim() : "";
+      const scopeOwnerTypeRaw = (scope as { ownerType?: unknown }).ownerType;
+      const scopeOwnerType =
+        scopeOwnerTypeRaw === "user" || scopeOwnerTypeRaw === "org"
+          ? scopeOwnerTypeRaw
+          : undefined;
+
+      const mergedScope = {
+        ...scope,
+        ...(scopeOwner ? {} : ownerDefault ? { owner: ownerDefault } : {}),
+        ...(scopeOwnerType
+          ? {}
+          : ownerTypeDefault
+          ? { ownerType: ownerTypeDefault }
+          : {})
+      };
+
+      return {
+        ...jobObj,
+        scope: mergedScope
+      };
+    })
   };
 }
