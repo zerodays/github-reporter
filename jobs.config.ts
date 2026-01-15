@@ -26,7 +26,7 @@ export const config: JobsConfig = {
         minute: 0, // Minute of hour (0-59) to run
       },
       scope: {
-        // blocklist: ["github-reporter"], // Repos to exclude from this job
+        blocklist: ["github-reporter"], // Repos to exclude from this job
       },
       promptFile: "./prompts/slack-daily-changelog.txt", // Path to LLM prompt template file
       outputFormat: "markdown", // Output format: "markdown" or "json"
