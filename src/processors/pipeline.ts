@@ -20,6 +20,7 @@ import {
   buildEmptyReport,
   buildIndexBaseKey,
   buildReportBaseKey,
+  formatDateWithWeekday,
   formatMonthKey,
   getWindowSize,
   summarizeActivity,
@@ -31,6 +32,7 @@ import type { AppConfig } from "../config.js";
 import type { JobConfig } from "../jobs.js";
 import type { StorageClient } from "../storage.js";
 import type { ReportInput, WebhookPayload } from "../types.js";
+import type { WindowRunResult } from "../runner/types.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -44,8 +46,9 @@ export async function runPipelineWindow(
   job: JobConfig,
   config: AppConfig,
   runLogger: ReturnType<typeof LoggerType.withContext>,
-  storage: StorageClient
-) {
+  storage: StorageClient,
+  options?: { notify?: boolean; recordFailure?: boolean }
+): Promise<WindowRunResult> {
   const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
@@ -56,6 +59,7 @@ export async function runPipelineWindow(
   const includePrivate = job.scope.includePrivate ?? config.github.includePrivate;
   const dataProfile = job.dataProfile ?? "standard";
   const metricsOnly = job.metricsOnly === true;
+  const timeZone = config.timeZone ?? "UTC";
 
   const { days: windowDays, hours: windowHours } = getWindowSize(
     slotType,
@@ -78,6 +82,10 @@ export async function runPipelineWindow(
   const manifestKey = `${reportBaseKey}/manifest.json`;
   const summaryKey = `${reportBaseKey}/summary.json`;
 
+  const notify = options?.notify ?? true;
+  const recordFailure = options?.recordFailure ?? true;
+  const baseResult = { slotKey, slotType, scheduledAt, window };
+
   const runStart = Date.now();
 
   try {
@@ -85,7 +93,7 @@ export async function runPipelineWindow(
       const manifestExists = await storage.exists(manifestKey);
       if (manifestExists) {
         runLogger.info("run.skipped", { key: manifestKey });
-        return;
+        return { ...baseResult, status: "skipped", reason: "idempotent" };
       }
     }
 
@@ -212,7 +220,7 @@ export async function runPipelineWindow(
 
     if (isEmpty && job.onEmpty === "skip") {
       runLogger.info("run.skipped", { reason: "empty" });
-      return;
+      return { ...baseResult, status: "skipped", reason: "empty" };
     }
 
     // 4. Generate Report
@@ -230,6 +238,9 @@ export async function runPipelineWindow(
       if (isEmpty && job.onEmpty !== "manifest-only") {
         reportText = buildEmptyReport(outputFormat, job.id);
       } else {
+        const reportDay = job.schedule?.type === "daily"
+          ? formatDateWithWeekday(window.start, timeZone)
+          : undefined;
         const generateStart = Date.now();
         runLogger.info("report.generate.start", {
           model: config.llm.model,
@@ -251,7 +262,8 @@ export async function runPipelineWindow(
           owner,
           ownerType,
           window,
-          timeZone: config.timeZone ?? "UTC",
+          timeZone,
+          reportDay,
           metrics,
           repos: redacted,
           inactiveRepoCount: job.includeInactiveRepos ? undefined : inactiveRepoCount
@@ -273,6 +285,12 @@ export async function runPipelineWindow(
           }
         );
         reportText = report.text;
+        if (outputFormat === "markdown" && reportDay) {
+          reportText = enforceWindowLine(
+            reportText,
+            `${reportDay} (${timeZone})`
+          );
+        }
         llmMetadata = report.usage ? {
           model: config.llm.model,
           inputTokens: report.usage.inputTokens,
@@ -303,7 +321,10 @@ export async function runPipelineWindow(
       };
       
       const webhookConfig = job.webhook ?? config.webhook;
-      if (webhookConfig.url || (webhookConfig.token && webhookConfig.channel)) {
+      if (
+        notify &&
+        (webhookConfig.url || (webhookConfig.token && webhookConfig.channel))
+      ) {
         runLogger.info("webhook.send.start");
         await withRetry(() => sendWebhook(webhookConfig, payload, reportText), {
           retries: config.network.retryCount,
@@ -313,11 +334,12 @@ export async function runPipelineWindow(
     }
 
     // 7. Manifest & Indexing
+    const durationMs = Date.now() - runStart;
     const manifest = buildManifest({
       owner,
       ownerType,
       window: { ...window, days: windowDays, hours: windowHours },
-      timezone: config.timeZone,
+      timezone: timeZone,
       scheduledAt,
       slotKey,
       slotType,
@@ -325,7 +347,7 @@ export async function runPipelineWindow(
       output,
       empty: isEmpty,
       job,
-      durationMs: Date.now() - runStart,
+      durationMs,
       dataProfile,
       llm: llmMetadata,
       metrics
@@ -334,7 +356,7 @@ export async function runPipelineWindow(
     await writeManifest(storage, manifestKey, manifest);
     await writeSummary(storage, summaryKey, manifest, manifestKey);
     
-    const periodKey = formatMonthKey(windowStart, config.timeZone);
+    const periodKey = formatMonthKey(windowStart, timeZone);
     const monthKey = `${indexBaseKey}/${periodKey}.json`;
     const indexItem: IndexItem = {
       owner,
@@ -348,50 +370,77 @@ export async function runPipelineWindow(
       empty: isEmpty,
       outputSize: manifest.output?.size ?? 0,
       manifestKey,
-      metrics: metrics.totals
+      metrics: metrics.totals,
+      durationMs,
+      llm: llmMetadata
     };
     await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
 
     const latestKey = `${indexBaseKey}/latest.json`;
     await writeLatest(storage, latestKey, owner, ownerType, indexItem, job.id);
 
+    return {
+      ...baseResult,
+      status: "success",
+      durationMs,
+      manifestKey,
+      outputUri: output?.stored.uri
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     runLogger.error("run.failed", { error: errorMessage });
-    
-    const failedManifest = buildFailedManifest({
-      owner,
-      ownerType,
-      window: { ...window, days: windowDays, hours: windowHours },
-      timezone: config.timeZone,
-      scheduledAt,
-      slotKey,
-      slotType,
-      job,
-      error: errorMessage,
-      durationMs: Date.now() - runStart
-    });
-    
-    await writeManifest(storage, manifestKey, failedManifest);
-    await writeSummary(storage, summaryKey, failedManifest, manifestKey);
-    
-    const periodKey = formatMonthKey(windowStart, config.timeZone);
-    const monthKey = `${indexBaseKey}/${periodKey}.json`;
-    const indexItem: IndexItem = {
-      owner,
-      ownerType,
-      jobId: job.id,
-      slotKey,
-      slotType,
-      scheduledAt,
-      window: { ...window, days: windowDays, hours: windowHours },
+
+    const durationMs = Date.now() - runStart;
+    if (recordFailure) {
+      const failedManifest = buildFailedManifest({
+        owner,
+        ownerType,
+        window: { ...window, days: windowDays, hours: windowHours },
+      timezone: timeZone,
+        scheduledAt,
+        slotKey,
+        slotType,
+        job,
+        error: errorMessage,
+        durationMs
+      });
+      
+      await writeManifest(storage, manifestKey, failedManifest);
+      await writeSummary(storage, summaryKey, failedManifest, manifestKey);
+      
+    const periodKey = formatMonthKey(windowStart, timeZone);
+      const monthKey = `${indexBaseKey}/${periodKey}.json`;
+      const indexItem: IndexItem = {
+        owner,
+        ownerType,
+        jobId: job.id,
+        slotKey,
+        slotType,
+        scheduledAt,
+        window: { ...window, days: windowDays, hours: windowHours },
+        status: "failed",
+        empty: true,
+        outputSize: 0,
+        manifestKey,
+        durationMs
+      };
+      await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
+      const latestKey = `${indexBaseKey}/latest.json`;
+      await writeLatest(storage, latestKey, owner, ownerType, indexItem, job.id);
+    }
+
+    return {
+      ...baseResult,
       status: "failed",
-      empty: true,
-      outputSize: 0,
-      manifestKey
+      error: errorMessage,
+      durationMs,
+      manifestKey: recordFailure ? manifestKey : undefined
     };
-    await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
-    const latestKey = `${indexBaseKey}/latest.json`;
-    await writeLatest(storage, latestKey, owner, ownerType, indexItem, job.id);
   }
+}
+
+function enforceWindowLine(text: string, label: string) {
+  const pattern = /(\*Window\* 🗓️\s*\r?\n)([^\r\n]*)/;
+  if (!pattern.test(text)) return text;
+  return text.replace(pattern, `$1${label}`);
 }

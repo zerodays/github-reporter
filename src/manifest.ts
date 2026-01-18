@@ -95,6 +95,8 @@ export type SummaryItem = {
   outputSize: number;
   manifestKey: string;
   metrics?: ReportMetricsTotals;
+  durationMs?: number;
+  llm?: ReportManifest["llm"];
 };
 
 export type IndexItem = SummaryItem;
@@ -304,7 +306,9 @@ export async function writeSummary(
       empty: manifest.empty ?? false,
       outputSize: manifest.output?.size ?? 0,
       manifestKey,
-      metrics: manifest.metrics?.totals
+      metrics: manifest.metrics?.totals,
+      durationMs: manifest.durationMs,
+      llm: manifest.llm
     } as SummaryItem,
     null,
     2

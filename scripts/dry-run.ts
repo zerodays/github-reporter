@@ -296,7 +296,7 @@ async function runWithPipelineLogs(
     jobName: job.name,
   });
 
-  await runPipelineWindow(slot, dryJob, config, jobLogger, storage);
+  await runPipelineWindow(slot, dryJob, config, jobLogger, storage, { notify: false });
 
   const outputKey = await findStoredKey(storage, /output\.(md|json)$/);
   const manifestKey = await findStoredKey(storage, /manifest\.json$/);

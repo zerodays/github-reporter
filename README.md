@@ -33,6 +33,17 @@ Typical uses:
    pnpm dev -- --job slack-daily-changelog
    ```
 
+## 🧰 CLI
+
+Manual utility for running, rerunning, deleting, listing, and stats:
+```bash
+pnpm reporter run --job daily-diary --at 2024-11-03
+pnpm reporter rerun --job daily-diary --at 2024-11-03
+pnpm reporter delete --job daily-diary --at 2024-11-03 --yes
+```
+
+See `docs/CLI.md` for the full reference.
+
    > [!TIP]
    > Need help getting your tokens? Check out our [Token Setup Guide](docs/SETUP_TOKENS.md) for step-by-step instructions on creating GitHub and Slack credentials.
 

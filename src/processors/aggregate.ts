@@ -26,6 +26,7 @@ import type { JobConfig } from "../jobs.js";
 import type { StorageClient } from "../storage.js";
 import type { AggregateInput } from "../types.js";
 import type { IndexItem, ReportManifest } from "../manifest.js";
+import type { WindowRunResult } from "../runner/types.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -39,8 +40,9 @@ export async function runAggregateWindow(
   job: JobConfig,
   config: AppConfig,
   runLogger: ReturnType<typeof LoggerType.withContext>,
-  storage: StorageClient
-) {
+  storage: StorageClient,
+  options?: { notify?: boolean; recordFailure?: boolean }
+): Promise<WindowRunResult> {
   const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const owner = job.scope.owner;
@@ -67,12 +69,16 @@ export async function runAggregateWindow(
   const manifestKey = `${reportBaseKey}/manifest.json`;
   const summaryKey = `${reportBaseKey}/summary.json`;
 
+  const notify = options?.notify ?? true;
+  const recordFailure = options?.recordFailure ?? true;
+  const baseResult = { slotKey, slotType, scheduledAt, window };
+
   const runStart = Date.now();
 
   const sourceJobId = job.aggregation?.sourceJobId;
   if (!sourceJobId) {
     runLogger.warn("aggregate.skipped", { reason: "missing_source_job_id" });
-    return;
+    return { ...baseResult, status: "skipped", reason: "missing_source_job_id" };
   }
 
   const sourceIndexBase = buildIndexBaseKey(
@@ -87,7 +93,7 @@ export async function runAggregateWindow(
       const manifestExists = await storage.exists(manifestKey);
       if (manifestExists) {
         runLogger.info("run.skipped", { key: manifestKey });
-        return;
+        return { ...baseResult, status: "skipped", reason: "idempotent" };
       }
     }
 
@@ -110,7 +116,7 @@ export async function runAggregateWindow(
     const isEmpty = aggregateItems.length === 0;
     if (isEmpty && job.onEmpty === "skip") {
       runLogger.info("run.skipped", { reason: "empty" });
-      return;
+      return { ...baseResult, status: "skipped", reason: "empty" };
     }
 
     // 3. Generate Report
@@ -177,7 +183,10 @@ export async function runAggregateWindow(
 
       // 4b. Webhook
       const webhookConfig = job.webhook ?? config.webhook;
-      if (webhookConfig.url || (webhookConfig.token && webhookConfig.channel)) {
+      if (
+        notify &&
+        (webhookConfig.url || (webhookConfig.token && webhookConfig.channel))
+      ) {
         const payload = {
           owner,
           ownerType,
@@ -198,6 +207,7 @@ export async function runAggregateWindow(
 
     // 5. Manifest & Indexing
     const dataProfile = job.dataProfile ?? "standard";
+    const durationMs = Date.now() - runStart;
     const manifest = buildManifest({
       owner,
       ownerType,
@@ -210,7 +220,7 @@ export async function runAggregateWindow(
       output,
       empty: isEmpty,
       job,
-      durationMs: Date.now() - runStart,
+      durationMs,
       dataProfile,
       llm: llmMetadata,
       source: { jobId: sourceJobId, itemCount: aggregateItems.length },
@@ -228,13 +238,62 @@ export async function runAggregateWindow(
        window: { ...window, days: windowDays, hours: windowHours },
        status: "success" as const, empty: isEmpty, outputSize: manifest.output?.size ?? 0,
        manifestKey,
-       metrics: metrics?.totals
+       metrics: metrics?.totals,
+       durationMs,
+       llm: llmMetadata
     };
     await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
     await writeLatest(storage, `${indexBaseKey}/latest.json`, owner, ownerType, indexItem, job.id);
 
+    return {
+      ...baseResult,
+      status: "success",
+      durationMs,
+      manifestKey,
+      outputUri: output?.stored.uri
+    };
   } catch (error) {
-     // ... fail manifest logic
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    runLogger.error("run.failed", { error: errorMessage });
+
+    const durationMs = Date.now() - runStart;
+    if (recordFailure) {
+      const failedManifest = buildFailedManifest({
+        owner,
+        ownerType,
+        window: { ...window, days: windowDays, hours: windowHours },
+        timezone: config.timeZone,
+        scheduledAt,
+        slotKey,
+        slotType,
+        job,
+        error: errorMessage,
+        durationMs
+      });
+
+      await writeManifest(storage, manifestKey, failedManifest);
+      await writeSummary(storage, summaryKey, failedManifest, manifestKey);
+
+      const periodKey = formatMonthKey(windowStart, config.timeZone);
+      const monthKey = `${indexBaseKey}/${periodKey}.json`;
+      const indexItem = {
+         owner, ownerType, jobId: job.id, slotKey, slotType, scheduledAt,
+         window: { ...window, days: windowDays, hours: windowHours },
+         status: "failed" as const, empty: true, outputSize: 0,
+         manifestKey,
+         durationMs
+      };
+      await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
+      await writeLatest(storage, `${indexBaseKey}/latest.json`, owner, ownerType, indexItem, job.id);
+    }
+
+    return {
+      ...baseResult,
+      status: "failed",
+      error: errorMessage,
+      durationMs,
+      manifestKey: recordFailure ? manifestKey : undefined
+    };
   }
 }
 

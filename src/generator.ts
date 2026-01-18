@@ -74,6 +74,9 @@ function buildPrompt(input: ReportInput, config: GeneratorConfig) {
   const tokenHint = config.maxTokensHint
     ? `Keep the output under ${config.maxTokensHint} tokens.`
     : "";
+  const reportDay = input.reportDay
+    ? `Report day (local): ${input.reportDay}`
+    : "";
 
   const template = config.promptTemplate ?? basePrompt;
 
@@ -81,6 +84,7 @@ function buildPrompt(input: ReportInput, config: GeneratorConfig) {
     template,
     schemaSection,
     tokenHint,
+    reportDay,
     "Activity window:",
     `${input.window.start} to ${input.window.end}`,
     "Timezone:",

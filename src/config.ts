@@ -44,14 +44,15 @@ const envSchema = z.object({
 
 export type AppConfig = ReturnType<typeof loadConfig>;
 
-export function loadConfig() {
+export function loadConfig(options?: { allowMissingLlmKey?: boolean }) {
   const env = envSchema.parse(process.env);
   const fileConfig = fileConfigSchema.parse(defaultConfig);
   
   const apiKey = env.GEMINI_API_KEY ?? fileConfig.llm.apiKey;
-  if (!apiKey) {
+  if (!apiKey && !options?.allowMissingLlmKey) {
     throw new Error("Missing GEMINI_API_KEY (env or config.defaults.ts).");
   }
+  const resolvedApiKey = apiKey ?? "";
   
   const storage = {
     type: env.BUCKET_TYPE ?? fileConfig.storage.type,
@@ -89,7 +90,7 @@ export function loadConfig() {
       prefix: env.OUTPUT_PREFIX ?? fileConfig.output.prefix,
     },
     llm: {
-      apiKey,
+      apiKey: resolvedApiKey,
       model: env.GEMINI_MODEL ?? fileConfig.llm.model,
     },
     storage,

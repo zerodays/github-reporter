@@ -217,6 +217,22 @@ export function formatDateOnly(value: Date, timeZone?: string) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+export function formatDateWithWeekday(value: Date | string, timeZone?: string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long"
+  });
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  ) as { year: string; month: string; day: string; weekday: string };
+  return `${map.weekday}, ${map.year}-${map.month}-${map.day}`;
+}
+
 function formatDateParts(value: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,

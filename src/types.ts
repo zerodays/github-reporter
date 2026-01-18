@@ -92,6 +92,7 @@ export type ReportInput = {
   ownerType: "user" | "org";
   window: ActivityWindow;
   timeZone: string;
+  reportDay?: string;
   metrics?: ReportMetrics;
   repos: RepoActivity[];
   inactiveRepoCount?: number;

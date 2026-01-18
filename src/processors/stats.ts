@@ -23,6 +23,7 @@ import type { AppConfig } from "../config.js";
 import type { JobConfig } from "../jobs.js";
 import type { StorageClient } from "../storage.js";
 import type { IndexItem } from "../manifest.js";
+import type { WindowRunResult } from "../runner/types.js";
 
 export async function runStatsWindow(
   slot: {
@@ -34,8 +35,9 @@ export async function runStatsWindow(
   job: JobConfig,
   config: AppConfig,
   runLogger: ReturnType<typeof LoggerType.withContext>,
-  storage: StorageClient
-) {
+  storage: StorageClient,
+  options?: { recordFailure?: boolean }
+): Promise<WindowRunResult> {
   const { window, slotKey, slotType, scheduledAt } = slot;
   const windowStart = new Date(window.start);
   const windowEnd = new Date(window.end);
@@ -68,6 +70,9 @@ export async function runStatsWindow(
   const manifestKey = `${reportBaseKey}/manifest.json`;
   const summaryKey = `${reportBaseKey}/summary.json`;
 
+  const recordFailure = options?.recordFailure ?? true;
+  const baseResult = { slotKey, slotType, scheduledAt, window };
+
   const runStart = Date.now();
 
   try {
@@ -75,7 +80,7 @@ export async function runStatsWindow(
       const manifestExists = await storage.exists(manifestKey);
       if (manifestExists) {
         runLogger.info("run.skipped", { key: manifestKey });
-        return;
+        return { ...baseResult, status: "skipped", reason: "idempotent" };
       }
     }
 
@@ -172,7 +177,7 @@ export async function runStatsWindow(
 
     if (isEmpty && job.onEmpty === "skip") {
       runLogger.info("run.skipped", { reason: "empty" });
-      return;
+      return { ...baseResult, status: "skipped", reason: "empty" };
     }
 
     // 4. Store Output
@@ -188,6 +193,7 @@ export async function runStatsWindow(
     }
 
     // 5. Manifest & Indexing
+    const durationMs = Date.now() - runStart;
     const manifest = buildManifest({
       owner,
       ownerType,
@@ -200,7 +206,7 @@ export async function runStatsWindow(
       output,
       empty: isEmpty,
       job,
-      durationMs: Date.now() - runStart,
+      durationMs,
       dataProfile
     });
 
@@ -220,47 +226,67 @@ export async function runStatsWindow(
       status: "success",
       empty: isEmpty,
       outputSize: manifest.output?.size ?? 0,
-      manifestKey
+      manifestKey,
+      durationMs
     };
     await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
     await writeLatest(storage, `${indexBaseKey}/latest.json`, owner, ownerType, indexItem, job.id);
 
+    return {
+      ...baseResult,
+      status: "success",
+      durationMs,
+      manifestKey,
+      outputUri: output?.stored.uri
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     runLogger.error("run.failed", { error: errorMessage });
-    
-    const failedManifest = buildFailedManifest({
-      owner,
-      ownerType,
-      window: { ...window, days: windowDays, hours: windowHours },
-      timezone: config.timeZone,
-      scheduledAt,
-      slotKey,
-      slotType,
-      job,
-      error: errorMessage,
-      durationMs: Date.now() - runStart
-    });
-    
-    await writeManifest(storage, manifestKey, failedManifest);
-    await writeSummary(storage, summaryKey, failedManifest, manifestKey);
- 
-    const periodKey = formatMonthKey(windowStart, config.timeZone);
-    const monthKey = `${indexBaseKey}/${periodKey}.json`;
-    const indexItem: IndexItem = {
-      owner,
-      ownerType,
-      jobId: job.id,
-      slotKey,
-      slotType,
-      scheduledAt,
-      window: { ...window, days: windowDays, hours: windowHours },
+
+    const durationMs = Date.now() - runStart;
+    if (recordFailure) {
+      const failedManifest = buildFailedManifest({
+        owner,
+        ownerType,
+        window: { ...window, days: windowDays, hours: windowHours },
+        timezone: config.timeZone,
+        scheduledAt,
+        slotKey,
+        slotType,
+        job,
+        error: errorMessage,
+        durationMs
+      });
+      
+      await writeManifest(storage, manifestKey, failedManifest);
+      await writeSummary(storage, summaryKey, failedManifest, manifestKey);
+   
+      const periodKey = formatMonthKey(windowStart, config.timeZone);
+      const monthKey = `${indexBaseKey}/${periodKey}.json`;
+      const indexItem: IndexItem = {
+        owner,
+        ownerType,
+        jobId: job.id,
+        slotKey,
+        slotType,
+        scheduledAt,
+        window: { ...window, days: windowDays, hours: windowHours },
+        status: "failed",
+        empty: true,
+        outputSize: 0,
+        manifestKey,
+        durationMs
+      };
+      await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
+      await writeLatest(storage, `${indexBaseKey}/latest.json`, owner, ownerType, indexItem, job.id);
+    }
+
+    return {
+      ...baseResult,
       status: "failed",
-      empty: true,
-      outputSize: 0,
-      manifestKey
+      error: errorMessage,
+      durationMs,
+      manifestKey: recordFailure ? manifestKey : undefined
     };
-    await updateIndex(storage, monthKey, owner, ownerType, periodKey, indexItem, job.id);
-    await writeLatest(storage, `${indexBaseKey}/latest.json`, owner, ownerType, indexItem, job.id);
   }
 }

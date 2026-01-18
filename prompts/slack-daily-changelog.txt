@@ -8,7 +8,7 @@ Output template (use this exact Slack mrkdwn structure - include the separator l
 *Daily Changelog* 🗒️
 
 *Window* 🗓️
-Day-of-week, YYYY-MM-DD → Day-of-week, YYYY-MM-DD (timezone from report metadata)
+Day-of-week, YYYY-MM-DD (timezone from report metadata)
 
 *Stats* 📊
 Additions: X | Deletions: Y
@@ -41,7 +41,7 @@ Rules:
 - Only include a section if it has at least one bullet.
 - Use Slack mrkdwn only: no Markdown headers (#), no tables, no HTML.
 - Always include the Window, Stats, and Contributors sections.
-- Window must include day-of-week for both dates; use the report timezone (metadata.timezone) if provided, otherwise UTC.
+- Window must use the Report day (local) value provided in metadata; include the report timezone (metadata.timezone) if provided, otherwise UTC.
 - Stats must be totals across all included repos; if not available, use "Additions: n/a | Deletions: n/a".
 - Contributors: list 2-4 people who contributed in this window. No rankings or counts.
 - Use metrics.totals for additions/deletions when available; otherwise use "n/a".
