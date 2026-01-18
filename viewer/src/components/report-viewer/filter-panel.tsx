@@ -18,6 +18,7 @@ export function FilterPanel() {
     owner,
     setOwnerType,
     setOwner,
+    owners,
     jobs,
     jobId,
     setJobId,
@@ -50,12 +51,39 @@ export function FilterPanel() {
               <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Owner
               </span>
-              <Input
-                value={owner}
-                onChange={(event) => setOwner(event.target.value)}
-                placeholder="vucinatim"
-                className="h-8 text-xs"
-              />
+              {owners.length ? (
+                <Select
+                  value={owner ? `${ownerType}:${owner}` : ""}
+                  onValueChange={(value) => {
+                    const [nextType, nextOwner] = value.split(":");
+                    if (nextType === "user" || nextType === "org") {
+                      setOwnerType(nextType);
+                    }
+                    setOwner(nextOwner ?? "");
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue placeholder="Select owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {owners.map((item) => (
+                      <SelectItem
+                        key={`${item.ownerType}:${item.owner}`}
+                        value={`${item.ownerType}:${item.owner}`}
+                      >
+                        {item.ownerType}/{item.owner}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={owner}
+                  onChange={(event) => setOwner(event.target.value)}
+                  placeholder="vucinatim"
+                  className="h-8 text-xs"
+                />
+              )}
             </label>
             <label className="grid gap-1.5">
               <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">

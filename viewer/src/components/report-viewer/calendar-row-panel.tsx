@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { listDaysInMonth, useReportViewer, VIEWER_TIME_ZONE } from "./context";
+import { cn } from "@/lib/utils";
+import { getDateForDayKey, listDaysInMonth, useReportViewer, VIEWER_TIME_ZONE } from "./context";
 
 export function CalendarRowPanel() {
   const { activeMonth, itemsByDay, selectedDayKey, selectDay } =
@@ -14,6 +15,7 @@ export function CalendarRowPanel() {
   const [weekdayFormatter, setWeekdayFormatter] = useState<Intl.DateTimeFormat | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTodayKey(new Intl.DateTimeFormat("en-CA", {
       timeZone: VIEWER_TIME_ZONE,
       year: "numeric",
@@ -33,28 +35,27 @@ export function CalendarRowPanel() {
         <ScrollArea className="w-full" scrollBar="horizontal">
           <div className="flex min-w-max gap-2 p-4">
             {listDaysInMonth(activeMonth).map((day) => {
-              const date = new Date(day);
+              const date = getDateForDayKey(day, VIEWER_TIME_ZONE);
               const dayItems = itemsByDay.get(day) ?? [];
               const mostRecent = dayItems[0];
               const status = mostRecent?.summary?.status ?? "success";
               const isEmpty = mostRecent?.summary?.empty ?? false;
               const hasReports = dayItems.length > 0;
               const isSelected = selectedDayKey === day;
-              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+              const isWeekend = isWeekendInTimeZone(date, VIEWER_TIME_ZONE);
               const isToday = day === todayKey;
               return (
                 <Button
                   key={day}
                   variant={hasReports ? "outline" : "ghost"}
-                  className={`relative h-16 w-12 shrink-0 flex-col items-center justify-center gap-0.5 text-xs ${
-                    hasReports ? "border-border" : "opacity-40"
-                  } ${
-                    isWeekend
-                      ? "border-dashed border-muted-foreground/50 bg-muted/30 text-foreground hover:bg-muted/40 data-[state=active]:bg-muted/50"
-                      : ""
-                  } ${
-                    isSelected ? "border-primary ring-2 ring-primary/40" : ""
-                  }`}
+                  className={cn(
+                    "relative h-16 w-12 shrink-0 flex-col items-center justify-center gap-0.5 text-xs",
+                    hasReports && !isWeekend && "!bg-primary/10 border-border hover:!bg-primary/30",
+                    hasReports && isWeekend && "!bg-primary/5 border-dashed border-muted-foreground/50 hover:!bg-primary/35",
+                    !hasReports && "opacity-40",
+                    isWeekend && !hasReports && "border-dashed border-muted-foreground/50 bg-muted/30 text-foreground hover:bg-muted/40 data-[state=active]:bg-muted/50",
+                    isSelected && "border-primary ring-2 ring-primary/40"
+                  )}
                   disabled={!hasReports}
                   onClick={() => void selectDay(day)}
                 >
@@ -100,4 +101,13 @@ export function CalendarRowPanel() {
       </CardContent>
     </Card>
   );
+}
+
+function isWeekendInTimeZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short"
+  });
+  const weekday = formatter.format(date);
+  return weekday === "Sat" || weekday === "Sun";
 }

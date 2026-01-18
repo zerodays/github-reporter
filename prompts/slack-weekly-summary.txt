@@ -1,9 +1,7 @@
 Summarize the last 7 daily changelogs into a high-value weekly report.
 Goal: informative, developer-friendly, and a bit energizing. Keep it grounded in evidence.
 
-Output template (use this exact Slack mrkdwn structure - include the separator line):
-
----------------------------------------------------
+Output template (use this exact Slack mrkdwn structure):
 
 *WEEKLY SUMMARY* 📅
 
@@ -39,5 +37,4 @@ Rules:
 - Every claim should be anchored to evidence from the daily changelogs (repo names, repeated themes, or concrete changes).
 - Inference is welcome but must be labeled as "likely" or "possible" and never stated as fact.
 - Avoid long-term goals unless explicitly stated in the source.
-- Always start the message with the separator line shown above.
 Tone: senior lead energy, optimistic but candid.

@@ -131,6 +131,7 @@ type JobRegistryItem = z.infer<typeof JobRegistryItemSchema>;
 type IndexItem = z.infer<typeof IndexItemSchema>;
 type Summary = z.infer<typeof SummarySchema>;
 type Manifest = z.infer<typeof ManifestSchema>;
+type OwnerItem = { owner: string; ownerType: OwnerType };
 
 type IndexItemWithSummary = IndexItem & { summary?: Summary };
 
@@ -139,6 +140,7 @@ type ReportViewerContextValue = {
   owner: string;
   setOwnerType: (value: OwnerType) => void;
   setOwner: (value: string) => void;
+  owners: OwnerItem[];
   jobs: JobRegistryItem[];
   jobId: string;
   setJobId: (value: string) => void;
@@ -166,6 +168,18 @@ const ReportViewerContext = createContext<ReportViewerContextValue | null>(
 const defaultOwner = process.env.NEXT_PUBLIC_DEFAULT_OWNER ?? "";
 const defaultOwnerType = (process.env.NEXT_PUBLIC_DEFAULT_OWNER_TYPE ??
   "user") as OwnerType;
+const ownerOptionsRaw = process.env.NEXT_PUBLIC_OWNER_OPTIONS ?? "";
+const ownersFromEnv = ownerOptionsRaw.trim()
+  ? parseOwnerOptions(
+      ownerOptionsRaw,
+      defaultOwner
+        ? {
+            owner: defaultOwner,
+            ownerType: defaultOwnerType
+          }
+        : null
+    )
+  : [];
 const prefix = process.env.NEXT_PUBLIC_REPORT_PREFIX ?? "reports";
 export const VIEWER_TIME_ZONE = process.env.NEXT_PUBLIC_TIME_ZONE ?? "Europe/Ljubljana";
 
@@ -209,6 +223,7 @@ export function ReportViewerProvider({
 }) {
   const [ownerType, setOwnerType] = useState<OwnerType>(defaultOwnerType);
   const [owner, setOwner] = useState(defaultOwner);
+  const owners = ownersFromEnv;
   const [jobs, setJobs] = useState<JobRegistryItem[]>([]);
   const [jobId, setJobId] = useState("");
   const [items, setItems] = useState<IndexItemWithSummary[]>([]);
@@ -247,7 +262,7 @@ export function ReportViewerProvider({
   const itemsByDay = useMemo(() => {
     const map = new Map<string, IndexItemWithSummary[]>();
     for (const item of items) {
-      const dayKey = getDayKeyInTimeZone(item.scheduledAt, VIEWER_TIME_ZONE);
+      const dayKey = getDayKeyForItem(item, VIEWER_TIME_ZONE);
       if (!dayKey.startsWith(activeMonth)) continue;
       const entry = map.get(dayKey);
       if (entry) {
@@ -394,6 +409,7 @@ export function ReportViewerProvider({
   );
 
   const selectTemplate = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async (templateId: string) => {
       if (!selectedManifest) return;
       const output = selectedManifest.output;
@@ -418,6 +434,23 @@ export function ReportViewerProvider({
     if (!owner) return;
     void loadJobs();
   }, [owner, ownerType, loadJobs]);
+
+  useEffect(() => {
+    if (!owners.length) return;
+    const match = owners.find(
+      (item) => item.owner === owner && item.ownerType === ownerType
+    );
+    if (match) return;
+    const preferred =
+      owners.find((item) => item.ownerType === ownerType) ?? owners[0];
+    if (!preferred) return;
+    if (preferred.ownerType !== ownerType) {
+      setOwnerType(preferred.ownerType);
+    }
+    if (preferred.owner !== owner) {
+      setOwner(preferred.owner);
+    }
+  }, [owners, owner, ownerType]);
 
   useEffect(() => {
     monthsLoadedRef.current = monthsLoaded;
@@ -454,6 +487,7 @@ export function ReportViewerProvider({
       owner,
       setOwnerType,
       setOwner,
+      owners,
       jobs,
       jobId,
       setJobId,
@@ -476,6 +510,7 @@ export function ReportViewerProvider({
     [
       ownerType,
       owner,
+      owners,
       jobs,
       jobId,
       activeMonth,
@@ -558,4 +593,76 @@ function getDayKeyInTimeZone(value: string, timeZone: string) {
     parts.map((part) => [part.type, part.value])
   ) as { year: string; month: string; day: string };
   return `${map.year}-${map.month}-${map.day}`;
+}
+
+function getDayKeyForItem(item: IndexItem, timeZone: string) {
+  if (item.slotType === "daily") {
+    return getDayKeyInTimeZone(item.window.start, timeZone);
+  }
+  return getDayKeyInTimeZone(item.scheduledAt, timeZone);
+}
+
+function parseOwnerOptions(value: string, fallback: OwnerItem | null) {
+  const items: OwnerItem[] = [];
+  const seen = new Set<string>();
+  const add = (item: OwnerItem) => {
+    if (!item.owner) return;
+    const key = `${item.ownerType}:${item.owner}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
+  for (const raw of value.split(",")) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const parts = entry.split(":");
+    const ownerType =
+      parts.length > 1 ? parts[0].trim() : fallback?.ownerType ?? "user";
+    const owner = parts.length > 1 ? parts[1].trim() : entry;
+    if (ownerType !== "user" && ownerType !== "org") continue;
+    if (!owner) continue;
+    add({ owner, ownerType });
+  }
+  if (fallback) add(fallback);
+  return items;
+}
+
+export function getDateForDayKey(dayKey: string, timeZone: string) {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const utcGuess = Date.UTC(year, month - 1, day, 12, 0, 0);
+  const offset = getOffsetMinutes(new Date(utcGuess), timeZone);
+  return new Date(utcGuess - offset * 60 * 1000);
+}
+
+function getOffsetMinutes(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  ) as {
+    year: string;
+    month: string;
+    day: string;
+    hour: string;
+    minute: string;
+    second: string;
+  };
+  const asUtc = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour),
+    Number(map.minute),
+    Number(map.second)
+  );
+  return (asUtc - date.getTime()) / 60000;
 }

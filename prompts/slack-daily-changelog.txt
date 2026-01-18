@@ -1,9 +1,7 @@
 Write a daily, developer-friendly changelog summarizing GitHub activity.
 Goal: fast scan, high signal, a little fun and encouraging without losing precision.
 
-Output template (use this exact Slack mrkdwn structure - include the separator line):
-
----------------------------------------------------
+Output template (use this exact Slack mrkdwn structure):
 
 *Daily Changelog* 🗒️
 
@@ -46,7 +44,6 @@ Rules:
 - Contributors: list 2-4 people who contributed in this window. No rankings or counts.
 - Use metrics.totals for additions/deletions when available; otherwise use "n/a".
 - Use metrics.topContributors (GitHub handles only) for the Contributors section when available.
-- Always start the message with the separator line shown above.
 - Group entries by repo; use "repo-name: change" formatting.
 - Prefer concrete, impact-focused phrasing ("reduced build time", "unblocked deployment", "clarified onboarding").
 - Make the commit hash the link using Slack format: <commit-url|commit-hash>.

@@ -3,13 +3,23 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useReportViewer } from "./context";
+import { useReportViewer, VIEWER_TIME_ZONE } from "./context";
 
 function formatWindowLabel(window: { days: number; hours?: number }) {
   if (window.hours && window.hours > 0) {
     return `${window.hours} hour window`;
   }
   return `${window.days} day window`;
+}
+
+function formatDateForBadge(value: string, timeZone: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
 }
 
 export function ReportDetailsPanel() {
@@ -31,7 +41,7 @@ export function ReportDetailsPanel() {
                 {selectedManifest.job?.name ?? "Report"}
               </Badge>
               <Badge variant="outline" className="text-[10px]">
-                {selectedManifest.window.start.slice(0, 10)}
+                {formatDateForBadge(selectedManifest.window.start, VIEWER_TIME_ZONE)}
               </Badge>
               {selectedManifest.status === "failed" ? (
                 <Badge variant="destructive" className="text-[10px]">
@@ -46,6 +56,9 @@ export function ReportDetailsPanel() {
             <CardTitle className="text-lg">
               {selectedManifest.owner} · {formatWindowLabel(selectedManifest.window)}
             </CardTitle>
+            <div className="text-[10px] text-muted-foreground">
+              Timezone: {VIEWER_TIME_ZONE}
+            </div>
             <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground border-b border-border/40 pb-2">
               <span>{selectedManifest.stats?.commits ?? 0} commits</span>
               <span>{selectedManifest.stats?.prs ?? 0} PRs</span>
@@ -84,7 +97,8 @@ export function ReportDetailsPanel() {
                     const time = new Date(item.scheduledAt).toLocaleTimeString(undefined, {
                       hour: "2-digit",
                       minute: "2-digit",
-                      hour12: false
+                      hour12: false,
+                      timeZone: VIEWER_TIME_ZONE
                     });
                     
                     return (

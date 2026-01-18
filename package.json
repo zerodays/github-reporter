@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "dry-run": "tsx scripts/dry-run.ts",
     "start": "node dist/src/index.js",
-    "viewer:dev": "npm --prefix viewer run dev"
+    "viewer:dev": "pnpm --filter viewer dev"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.621.0",

@@ -21,16 +21,26 @@ export const env = createEnv({
     NEXT_PUBLIC_TIME_ZONE: z.string().optional(),
   },
   runtimeEnv: {
-    R2_BUCKET: process.env.R2_BUCKET,
-    R2_REGION: process.env.R2_REGION,
-    R2_ENDPOINT: process.env.R2_ENDPOINT,
-    R2_FORCE_PATH_STYLE: process.env.R2_FORCE_PATH_STYLE,
-    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
-    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
-    NEXT_PUBLIC_DEFAULT_OWNER: process.env.NEXT_PUBLIC_DEFAULT_OWNER,
-    NEXT_PUBLIC_DEFAULT_OWNER_TYPE: process.env.NEXT_PUBLIC_DEFAULT_OWNER_TYPE,
-    NEXT_PUBLIC_REPORT_PREFIX: process.env.NEXT_PUBLIC_REPORT_PREFIX,
-    NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
+    R2_BUCKET:
+      process.env.R2_BUCKET ??
+      process.env.BUCKET_NAME ??
+      stripBucketScheme(process.env.BUCKET_URI),
+    R2_REGION: process.env.R2_REGION ?? process.env.BUCKET_REGION ?? "auto",
+    R2_ENDPOINT: process.env.R2_ENDPOINT ?? process.env.BUCKET_ENDPOINT,
+    R2_FORCE_PATH_STYLE:
+      process.env.R2_FORCE_PATH_STYLE ?? process.env.BUCKET_FORCE_PATH_STYLE,
+    R2_ACCESS_KEY_ID:
+      process.env.R2_ACCESS_KEY_ID ?? process.env.BUCKET_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY:
+      process.env.R2_SECRET_ACCESS_KEY ?? process.env.BUCKET_SECRET_ACCESS_KEY,
+    NEXT_PUBLIC_DEFAULT_OWNER:
+      process.env.NEXT_PUBLIC_DEFAULT_OWNER ?? process.env.GITHUB_OWNER,
+    NEXT_PUBLIC_DEFAULT_OWNER_TYPE:
+      process.env.NEXT_PUBLIC_DEFAULT_OWNER_TYPE ?? process.env.GITHUB_OWNER_TYPE,
+    NEXT_PUBLIC_REPORT_PREFIX:
+      process.env.NEXT_PUBLIC_REPORT_PREFIX ?? process.env.OUTPUT_PREFIX,
+    NEXT_PUBLIC_TIME_ZONE:
+      process.env.NEXT_PUBLIC_TIME_ZONE ?? process.env.TIMEZONE,
   },
   onValidationError: (error) => {
     if (!globalThis.__viewerEnvErrorLogged) {
@@ -45,3 +55,8 @@ export const env = createEnv({
     process.exit(1);
   },
 });
+
+function stripBucketScheme(value?: string) {
+  if (!value) return undefined;
+  return value.replace(/^s3:\/\//, "");
+}
